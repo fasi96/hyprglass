@@ -249,9 +249,11 @@ void main() {
     // light amount (lightA.x) and bend (lightB.x) are independent: with no
     // added light the rim still bends toward the light, and vice versa.
     if (lightA.x > 0.001 || abs(lightB.x) > 0.001) {
-        vec2  p   = boxPos + uv * fullSize;
+        // one direction per window (from its centre), like sunlight: a per-pixel
+        // direction fans out into a pointed cone when the light sits near an edge
+        vec2  toL = lightPos - (boxPos + 0.5 * fullSize);
         vec2  n   = lightNormal(uv, max(radius, lightA.z * 6.0));
-        vec2  L   = normalize(lightPos - p);
+        vec2  L   = length(toL) > 1.0 ? normalize(toL) : vec2(0.0, -1.0);
         float ndl = dot(n, L);
         float rim = exp(bevelSdf / max(lightA.z, 1.0));       // 1 at the edge, fading inward
         float lit = pow(max(ndl, 0.0), lightA.y);
