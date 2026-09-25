@@ -51,6 +51,19 @@ uniform float adaptiveDim;
 uniform float adaptiveBoost;
 uniform float roundingPower;
 
+// Glass light (see GlassLight.hpp). Packed:
+uniform vec2  lightPos;     // light source, monitor-local px
+uniform vec4  lightA;       // light amount, sharpness, rim width px, far-side reflection
+uniform vec4  lightB;       // bend, click glow progress (-1 = none), glow light amount, glow flex
+uniform vec3  lightColor;
+uniform vec2  glowPoint;    // click point, window-local px
+uniform vec2  glowC;        // glow reach px, ring width px
+uniform float materialize;  // 0..1: new windows ramp their bending up
+uniform vec2  boxPos;       // window top-left, monitor-local px
+uniform vec3  parallax;     // xy = view shift px (cursor tilt), z = extra toward the rim
+uniform vec4  oilA;         // amount (0 = off), time (s, pre-scaled by speed), swirl size px, colourfulness
+uniform vec4  oilB;         // warp px, unused x3
+
 uniform sampler2D maskTex;
 uniform int useMask;
 uniform vec2 maskUVOffset;
@@ -96,13 +109,58 @@ float getCornerSDF(vec2 uv) {
     return getRoundedBoxSDF(uv, radius);
 }
 
+// Edge distance for the bevel, crease-free. Contour lines are rounded
+// rectangles that match the window outline exactly at the edge (depth 0) and
+// get rounder going inward: at depth d the box is inset by d and its corner
+// radius is r + d. Radius only ever grows, so the top and side bevels always
+// blend round the corners like a polished edge (no 45-degree seam, no flat
+// spot). Per pixel the depth is a closed-form quadratic in the corner zone:
+//   |a + 2d| = r + d,  a = |p| - halfSize + r   =>   7d^2 + (4(ax+ay) - 2r) d + |a|^2 - r^2 = 0
+// and the plain straight-edge distance elsewhere.
+float getBevelSDF(vec2 uv, float k) {
+    vec2  H = fullSize * 0.5;
+    float r = min(radius, min(H.x, H.y));
+    vec2  a = abs((uv - 0.5) * fullSize) - H + r;
+    float d = min(r - a.x, r - a.y);                      // straight-edge depth
+    float B = 4.0 * (a.x + a.y) - 2.0 * r;
+    float C = dot(a, a) - r * r;
+    float disc = B * B - 28.0 * C;
+    if (disc >= 0.0) {
+        float dc = (-B + sqrt(disc)) / 14.0;
+        if (a.x + 2.0 * dc >= 0.0 && a.y + 2.0 * dc >= 0.0)
+            d = dc;                                        // in a corner zone: the rounded contour
+    }
+    return -d;
+}
+
+// Outward surface normal of the bevel (gradient of the crease-free depth).
+vec2 outwardNormal(vec2 uv, float k) {
+    vec2  e  = vec2(1.0) / fullSize;
+    float dx = getBevelSDF(uv + vec2(e.x, 0.0), k) - getBevelSDF(uv - vec2(e.x, 0.0), k);
+    float dy = getBevelSDF(uv + vec2(0.0, e.y), k) - getBevelSDF(uv - vec2(0.0, e.y), k);
+    vec2 g = vec2(dx, dy);
+    float l = length(g);
+    return l > 1e-5 ? g / l : vec2(0.0);
+}
+
 // ============================================================================
-// REFRACTION DIRECTION
-// Pixel-space direction toward window center — perfectly smooth everywhere,
-// no SDF gradient needed. On straight edges the perpendicular pixel distance
-// dominates, giving approximately edge-normal direction. At corners it
-// naturally follows the diagonal.
+// OIL FILM helpers: smooth value noise, fbm, domain warping
 // ============================================================================
+
+float oilHash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 45758.5453); }
+
+float oilNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(oilHash(i), oilHash(i + vec2(1.0, 0.0)), u.x),
+               mix(oilHash(i + vec2(0.0, 1.0)), oilHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float oilFbm(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 3; i++) { v += a * oilNoise(p); p = p * 2.03 + vec2(17.0, 9.0); a *= 0.5; }
+    return v;
+}
 
 vec2 refractionDir(vec2 uv) {
     vec2 toCenterPx = (vec2(0.5) - uv) * fullSize;
@@ -160,7 +218,11 @@ void main() {
     // edgeProximity: 1.0 at boundary, exponential decay inward
     // inwardDir: pixel-space direction toward center (smooth everywhere)
     // ========================================
-    float edgeProximity = exp(cornerSdf / bezelWidthPx);
+    // bevel distance: crease-free round the corners
+    float bevelK   = 0.0;   // unused by the crease-free bevel; kept for the helper signatures
+    float bevelSdf = getBevelSDF(uv, bevelK);
+    float edgeProximity = exp(bevelSdf / bezelWidthPx);
+
     vec2 inwardDir = refractionDir(uv);
 
     // ========================================
@@ -172,7 +234,45 @@ void main() {
     // ========================================
     float refractionPx = refractionStrength * 50.0;
     float refractionMag = edgeProximity * refractionPx;
-    vec2 baseOffset = inwardDir * refractionMag / fullSize;
+    vec2 baseOffset = inwardDir * refractionMag / fullSize * materialize;
+
+    // ========================================
+    // GLASS LIGHT — the rim catches a light source where it faces it (moving
+    // the window or the cursor moves the highlight), plus a softer reflection
+    // on the far side. Where it's lit the glass concentrates light (bends more).
+    // ========================================
+    float lightAmt = 0.0;
+    // light amount (lightA.x) and bend (lightB.x) are independent: with no
+    // added light the rim still bends toward the light, and vice versa.
+    if (lightA.x > 0.001 || abs(lightB.x) > 0.001) {
+        vec2  p   = boxPos + uv * fullSize;
+        vec2  n   = outwardNormal(uv, bevelK);
+        vec2  L   = normalize(lightPos - p);
+        float ndl = dot(n, L);
+        float rim = exp(bevelSdf / max(lightA.z, 1.0));       // 1 at the edge, fading inward
+        float lit = pow(max(ndl, 0.0), lightA.y);
+        float far = pow(max(-ndl, 0.0), lightA.y) * lightA.w;
+        lightAmt  = (lit + far) * rim * lightA.x;
+        baseOffset += inwardDir * (lit * rim * lightB.x * 20.0) / fullSize * materialize;
+    }
+
+    // ========================================
+    // CLICK GLOW — energizes from the click point: a ring of light spreads
+    // through the glass and fades, flexing the glass outward as it passes.
+    // ========================================
+    float glowAmt = 0.0;
+    if (lightB.y >= 0.0) {   // glow light (lightB.z) and flex (lightB.w) independent
+        float gp   = lightB.y;
+        vec2  px   = uv * fullSize;
+        float d    = distance(px, glowPoint);
+        float R    = glowC.x * (1.0 - pow(1.0 - gp, 3.0));    // ease out
+        float fade = pow(1.0 - gp, 2.0);
+        float ring = exp(-pow((d - R) / max(glowC.y, 1.0), 2.0));
+        float fill = exp(-pow(d / max(R * 0.6 + 1.0, 1.0), 2.0)) * 0.5;
+        glowAmt    = (ring + fill) * fade * lightB.z;
+        vec2 away  = d > 0.5 ? (px - glowPoint) / d : vec2(0.0);
+        baseOffset += away * (ring * fade * lightB.w * 14.0) / fullSize;
+    }
 
     // ========================================
     // CHROMATIC ABERRATION — per-channel refraction scale
@@ -196,7 +296,7 @@ void main() {
         );
         float lensMaxPx = lensDistortion * minDim * 0.006;
         float lensFade = 1.0 - edgeProximity;
-        domeUV = dGrad * lensMaxPx * lensFade / fullSize;
+        domeUV = dGrad * lensMaxPx * lensFade / fullSize * materialize;
     }
 
     // ========================================
@@ -204,10 +304,34 @@ void main() {
     // Nearby color influence comes naturally from the Gaussian blur
     // kernel crossing the window boundary — no explicit raw sampling.
     // ========================================
+    // ========================================
+    // OIL FILM — a thin film on the glass: slow domain-warped swirls whose
+    // thickness sets an iridescent colour (like oil on water), in patches,
+    // gently rippling the view behind it. Attached to the window.
+    // ========================================
+    float oilSlick = 0.0;
+    vec3  oilTint  = vec3(0.0);
+    vec2  oilUV    = vec2(0.0);
+    if (oilA.x > 0.001) {
+        vec2  p  = uv * fullSize / max(oilA.z, 1.0);
+        float t  = oilA.y;
+        vec2  q  = vec2(oilFbm(p + vec2(0.0, t * 0.11)), oilFbm(p + vec2(5.2, 1.3) - t * 0.09));
+        float th = oilFbm(p + 3.0 * q + vec2(t * 0.05, -t * 0.04));
+        oilSlick = smoothstep(0.42, 0.72, th);
+        vec3 film = 0.5 + 0.5 * cos(6.2831853 * (th * 2.2 + vec3(0.0, 0.33, 0.67)));
+        oilTint  = mix(vec3(1.0), film, clamp(oilA.w, 0.0, 1.0));
+        oilUV    = (q - 0.5) * oilB.x / fullSize * materialize;
+    }
+
+    // PARALLAX — the view behind the glass shifts against the pane as the
+    // cursor moves (like tilting thick glass), a bit more toward the rim.
+    // Same shift for every channel, so no colour fringing across the pane.
+    vec2 parallaxUV = parallax.xy * (1.0 + parallax.z * edgeProximity) / fullSize * materialize;
+
     vec3 color;
-    vec2 uvR = uv + offsetR + domeUV;
-    vec2 uvG = uv + offsetG + domeUV;
-    vec2 uvB = uv + offsetB + domeUV;
+    vec2 uvR = uv + offsetR + domeUV + parallaxUV + oilUV;
+    vec2 uvG = uv + offsetG + domeUV + parallaxUV + oilUV;
+    vec2 uvB = uv + offsetB + domeUV + parallaxUV + oilUV;
 
     if (chromaticAberration > 0.001 && edgeProximity > 0.01) {
         color.r = sampleBlurred(uvR).r;
@@ -264,6 +388,14 @@ void main() {
         float topBias = pow(max(1.0 - uv.y, 0.0), 2.0);
         float spec = topBias * edgeProximity * edgeProximity * specularStrength * 0.08;
         color += vec3(1.0, 0.99, 0.97) * spec;
+    }
+
+    color += lightColor * lightAmt * 0.55 + vec3(1.0, 0.99, 0.97) * glowAmt * 0.35;
+
+    // oil sheen: soft-light the film colour into the glass where the film is thick
+    if (oilSlick > 0.0) {
+        float k = oilA.x * oilSlick;
+        color = mix(color, color * (0.7 + 0.6 * oilTint) + oilTint * 0.06, k);
     }
 
     // ========================================

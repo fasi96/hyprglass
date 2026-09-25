@@ -1,3 +1,6 @@
+#include "GlassLight.hpp"
+#include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
 #include "GlassDecoration.hpp"
 #include "BuiltInPresets.hpp"
 #include "GlassPassElement.hpp"
@@ -16,6 +19,7 @@
 
 CGlassDecoration::CGlassDecoration(PHLWINDOW window)
     : IHyprWindowDecoration(window), m_window(window) {
+    m_createdAt = GlassLight::nowSeconds();
 }
 
 CGlassDecoration::~CGlassDecoration() {
@@ -238,6 +242,42 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
     float glassAlpha = window->alphaTotalWithout(Desktop::View::WINDOW_ALPHA_ACTIVE);
     if (const auto workspace = window->m_workspace; workspace && !window->m_pinned)
         glassAlpha *= workspace->m_alpha->value();
+
+    {   // glass light values for this window's draw
+        using GlassLight::f;
+        auto&        lf  = g_pGlobalState->lightFrame;
+        const auto&  cfg = g_pGlobalState->config;
+        const double now = GlassLight::nowSeconds();
+
+        const bool focused = Desktop::focusState()->window() == window;
+        lf.share = focused ? 1.0f : std::clamp(f(cfg.lightInactive), 0.0f, 1.0f);
+        lf.oilShare = focused ? 1.0f : std::clamp(f(cfg.oilInactive), 0.0f, 1.0f);
+
+        const float md  = GlassLight::materializeDuration();
+        lf.materialize  = (md > 0.01f ? GlassLight::ease(static_cast<float>((now - m_createdAt) / md)) : 1.0f) * glassAlpha;
+
+        const Vector2D cursor = GlassLight::lightCursor(g_pInputManager->getMouseCoordsInternal());
+        const Vector2D light  = GlassLight::lightPositionGlobal(cursor);
+
+        // parallax: cursor offset from the window centre, as a share of the monitor
+        lf.parallax = {0, 0};
+        if (GlassLight::parallaxOn()) {
+            const auto   box  = window->getWindowMainSurfaceBox();
+            const auto   rel  = (cursor - box.middle()) / std::max(monitor->m_size.x, monitor->m_size.y);
+            const double px   = f(cfg.parallaxStrength) * monitor->m_scale;
+            lf.parallax = {-std::clamp(rel.x, -1.0, 1.0) * px, -std::clamp(rel.y, -1.0, 1.0) * px};
+        }
+        lf.lightPos = (light - monitor->m_position) * monitor->m_scale;
+
+        lf.glow = -1.0f;
+        if (GlassLight::glowOn() && g_pGlobalState->glowWindow.lock() == window) {
+            const double p = (now - g_pGlobalState->glowStart) / GlassLight::glowDuration();
+            if (p >= 0.0 && p < 1.0) {
+                lf.glow      = static_cast<float>(p);
+                lf.glowLocal = (g_pGlobalState->glowPoint - monitor->m_position) * monitor->m_scale - Vector2D(windowBox.x, windowBox.y);
+            }
+        }
+    }
 
     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, source,
                                      windowBox, transformBox, glassAlpha,

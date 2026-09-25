@@ -44,6 +44,17 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.vibrancyDarkness    = glGetUniformLocation(program, "vibrancyDarkness");
     glassUniforms.adaptiveDim         = glGetUniformLocation(program, "adaptiveDim");
     glassUniforms.adaptiveBoost       = glGetUniformLocation(program, "adaptiveBoost");
+    glassUniforms.lightPos            = glGetUniformLocation(program, "lightPos");
+    glassUniforms.lightA              = glGetUniformLocation(program, "lightA");
+    glassUniforms.lightB              = glGetUniformLocation(program, "lightB");
+    glassUniforms.lightColor          = glGetUniformLocation(program, "lightColor");
+    glassUniforms.glowPoint           = glGetUniformLocation(program, "glowPoint");
+    glassUniforms.glowC               = glGetUniformLocation(program, "glowC");
+    glassUniforms.materialize         = glGetUniformLocation(program, "materialize");
+    glassUniforms.boxPos              = glGetUniformLocation(program, "boxPos");
+    glassUniforms.parallax            = glGetUniformLocation(program, "parallax");
+    glassUniforms.oilA                = glGetUniformLocation(program, "oilA");
+    glassUniforms.oilB                = glGetUniformLocation(program, "oilB");
     glassUniforms.maskTex             = glGetUniformLocation(program, "maskTex");
     glassUniforms.useMask             = glGetUniformLocation(program, "useMask");
     glassUniforms.maskUVOffset        = glGetUniformLocation(program, "maskUVOffset");

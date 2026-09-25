@@ -50,6 +50,43 @@ inline constexpr auto DEFAULT_THEME      = "plugin:hyprglass:default_theme";
 inline constexpr auto DEFAULT_PRESET     = "plugin:hyprglass:default_preset";
 inline constexpr auto MANAGE_WINDOW_BLUR = "plugin:hyprglass:manage_window_blur";
 
+// ---- Liquid Glass motion (global-only) --------------------------------------
+// Light: a light source over the whole desktop lights each window's rim where
+// it faces the light; the light leans toward the cursor, so moving a window or
+// the pointer slides the highlight round the rim.
+inline constexpr auto LIGHT_STRENGTH       = "plugin:hyprglass:light_strength";        // light added on the rim (0 = none; the glass can still bend)
+inline constexpr auto LIGHT_BEND           = "plugin:hyprglass:light_bend";            // how much the rim bends where it faces the light (0 = none)
+inline constexpr auto LIGHT_X              = "plugin:hyprglass:light_x";               // across all monitors: 0 = left edge, 1 = right edge
+inline constexpr auto LIGHT_Y              = "plugin:hyprglass:light_y";               // 0 = top of the monitors, below 0 = above them
+inline constexpr auto LIGHT_CURSOR         = "plugin:hyprglass:light_cursor";          // how far the light leans toward the cursor (0-1)
+inline constexpr auto LIGHT_LAG            = "plugin:hyprglass:light_lag";             // seconds light + parallax take to catch the cursor (0 = instant)
+inline constexpr auto LIGHT_SHARPNESS      = "plugin:hyprglass:light_sharpness";       // how tightly the highlight gathers
+inline constexpr auto LIGHT_WIDTH          = "plugin:hyprglass:light_width";           // how far into the glass the rim light reaches, px
+inline constexpr auto LIGHT_FAR            = "plugin:hyprglass:light_far";             // soft reflection on the side facing away
+inline constexpr auto LIGHT_INACTIVE       = "plugin:hyprglass:light_inactive";        // unfocused windows' share of the rim light
+inline constexpr auto LIGHT_COLOR          = "plugin:hyprglass:light_color";           // 0xRRGGBB
+inline constexpr auto LIGHT_DRIFT          = "plugin:hyprglass:light_drift";           // the light slowly wanders this far (share of the desktop, 0 = still)
+inline constexpr auto LIGHT_DRIFT_PERIOD   = "plugin:hyprglass:light_drift_period";    // seconds for one slow wander
+// Parallax: the view behind the glass shifts against the pane as the cursor moves.
+inline constexpr auto PARALLAX_STRENGTH    = "plugin:hyprglass:parallax_strength";     // px (0 = off)
+inline constexpr auto PARALLAX_DEPTH       = "plugin:hyprglass:parallax_depth";        // extra shift toward the rim, so the glass reads as thick
+// Oil film: slow iridescent swirls on the glass, like oil on water.
+inline constexpr auto OIL_AMOUNT           = "plugin:hyprglass:oil_amount";            // 0 = off
+inline constexpr auto OIL_SPEED            = "plugin:hyprglass:oil_speed";             // how fast the film flows
+inline constexpr auto OIL_SCALE            = "plugin:hyprglass:oil_scale";             // swirl size, px
+inline constexpr auto OIL_COLOR            = "plugin:hyprglass:oil_color";             // 0 = clear sheen, 1 = full iridescence
+inline constexpr auto OIL_WARP             = "plugin:hyprglass:oil_warp";              // how much the film ripples the view behind
+inline constexpr auto OIL_INACTIVE         = "plugin:hyprglass:oil_inactive";          // unfocused windows' share (0 = focused only)
+inline constexpr auto OIL_FPS              = "plugin:hyprglass:oil_fps";               // redraws per second while it flows
+// Click glow: clicking a glass window energizes it from the click point.
+inline constexpr auto GLOW_STRENGTH        = "plugin:hyprglass:glow_strength";         // light added (0 = none; the glass can still flex)
+inline constexpr auto GLOW_FLEX            = "plugin:hyprglass:glow_flex";             // how much the ripple flexes the glass (0 = none)
+inline constexpr auto GLOW_DURATION        = "plugin:hyprglass:glow_duration";         // seconds to spread and fade
+inline constexpr auto GLOW_SPREAD          = "plugin:hyprglass:glow_spread";           // how far it travels, share of the window size
+inline constexpr auto GLOW_RING            = "plugin:hyprglass:glow_ring";             // ring width, px
+// Materialize: new windows appear by ramping up their bending, not by fading.
+inline constexpr auto MATERIALIZE_DURATION = "plugin:hyprglass:materialize_duration";  // seconds (0 = off)
+
 // Preset keyword, registered as unscoped because Hyprlang does not dispatch
 // scoped keyword handlers inside the plugin special category.
 inline constexpr auto PRESET_KEYWORD = "preset";
@@ -207,6 +244,36 @@ struct SPluginConfig {
     // against the live framebuffer (which contains the glass) instead of its
     // pre-frame cached blur.
     Hyprlang::INT* const* manageWindowBlur = nullptr;
+
+    // glass light
+    Hyprlang::FLOAT* const* lightStrength = nullptr;
+    Hyprlang::FLOAT* const* lightX = nullptr;
+    Hyprlang::FLOAT* const* lightY = nullptr;
+    Hyprlang::FLOAT* const* lightSharpness = nullptr;
+    Hyprlang::FLOAT* const* lightWidth = nullptr;
+    Hyprlang::FLOAT* const* lightFar = nullptr;
+    Hyprlang::FLOAT* const* lightBend = nullptr;
+    Hyprlang::FLOAT* const* lightCursor = nullptr;
+    Hyprlang::FLOAT* const* lightInactive = nullptr;
+    Hyprlang::FLOAT* const* glowStrength = nullptr;
+    Hyprlang::FLOAT* const* glowDuration = nullptr;
+    Hyprlang::FLOAT* const* glowSpread = nullptr;
+    Hyprlang::FLOAT* const* glowRing = nullptr;
+    Hyprlang::FLOAT* const* glowFlex = nullptr;
+    Hyprlang::FLOAT* const* materializeDuration = nullptr;
+    Hyprlang::INT* const*   lightColor = nullptr;
+    Hyprlang::FLOAT* const* lightDrift = nullptr;
+    Hyprlang::FLOAT* const* lightDriftPeriod = nullptr;
+    Hyprlang::FLOAT* const* lightLag = nullptr;
+    Hyprlang::FLOAT* const* parallaxStrength = nullptr;
+    Hyprlang::FLOAT* const* parallaxDepth = nullptr;
+    Hyprlang::FLOAT* const* oilAmount = nullptr;
+    Hyprlang::FLOAT* const* oilSpeed = nullptr;
+    Hyprlang::FLOAT* const* oilScale = nullptr;
+    Hyprlang::FLOAT* const* oilColor = nullptr;
+    Hyprlang::FLOAT* const* oilWarp = nullptr;
+    Hyprlang::FLOAT* const* oilInactive = nullptr;
+    Hyprlang::FLOAT* const* oilFps = nullptr;
     StringConfigPtr      defaultTheme;
     StringConfigPtr      defaultPreset;
 

@@ -27,6 +27,7 @@ class CGlassDecoration : public IHyprWindowDecoration {
     void                    onFullscreenStateChanged();
 
     WP<CGlassDecoration> m_self;
+    double               m_createdAt = 0.0;   // for materialize (GlassLight)
 
   private:
     PHLWINDOWREF m_window;

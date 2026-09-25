@@ -5,6 +5,11 @@
 #include "GlassRenderer.hpp"
 #include "Globals.hpp"
 #include "PluginConfig.hpp"
+#include "GlassLight.hpp"
+
+#include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/LayerSurface.hpp>
@@ -369,6 +374,90 @@ APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
 }
 
+// Damage every glass window. Decorations are weak refs to unique pointers:
+// use get(), never lock() (lock() on a unique-backed ref aborts).
+static void damageAllGlass() {
+    for (const auto& decoration : g_pGlobalState->decorations) {
+        if (auto* deco = decoration.get())
+            deco->damageEntire();
+    }
+}
+
+static void armLightTimer() {
+    auto& st = *g_pGlobalState;
+    if (!st.lightFast && st.lightTimer) {
+        st.lightFast = true;
+        st.lightTimer->updateTimeout(std::chrono::milliseconds(16));
+    }
+}
+
+// Glass light driver: ~60 fps redraws only while the cursor moves (light
+// leaning toward it), a click glow runs, or a window materializes.
+static void lightTick(SP<CEventLoopTimer> self, void*) {
+    using namespace std::chrono;
+    using GlassLight::f;
+    if (!g_pGlobalState)
+        return;
+    auto&        st  = *g_pGlobalState;
+    const double now = GlassLight::nowSeconds();
+    bool active = false;
+    bool redrawAll = false;
+
+    // lagged cursor: ease toward the real pointer; keep going until it settles
+    const Vector2D mouse = g_pInputManager->getMouseCoordsInternal();
+    const double   dt    = std::clamp(now - st.lastLightTick, 0.0, 0.25);
+    st.lastLightTick     = now;
+    if (!st.smoothCursorInit) {
+        st.smoothCursor     = mouse;
+        st.smoothCursorInit = true;
+    }
+    const float lag = f(st.config.lightLag);
+    if (lag > 0.01f) {
+        st.smoothCursor = st.smoothCursor + (mouse - st.smoothCursor) * (1.0 - std::exp(-dt / lag));
+        if (st.smoothCursor.distance(mouse) < 0.5)
+            st.smoothCursor = mouse;
+    } else {
+        st.smoothCursor = mouse;
+    }
+    const bool cursorLight = (GlassLight::lightOn() && f(st.config.lightCursor) > 0.001f) || GlassLight::parallaxOn();
+    if (cursorLight && (st.cursorMoved || st.smoothCursor != mouse))
+        redrawAll = true, active = true;
+    st.cursorMoved = false;
+    if (GlassLight::glowOn()) {
+        if (auto w = st.glowWindow.lock(); w && now - st.glowStart < GlassLight::glowDuration() + 0.05) {
+            if (auto* deco = glassDecorationFor(w))
+                deco->damageEntire();
+            active = true;
+        }
+    }
+    if (const float md = GlassLight::materializeDuration(); md > 0.01f) {
+        for (const auto& decoration : st.decorations) {
+            if (auto* deco = decoration.get(); deco && now - deco->m_createdAt < md + 0.05) {
+                deco->damageEntire();
+                active = true;
+            }
+        }
+    }
+
+    // slow drift / flowing oil film: gentle motion, a modest frame rate is plenty
+    const bool drifting = GlassLight::driftOn();
+    const bool oil      = GlassLight::oilOn();
+    if (redrawAll || drifting)
+        damageAllGlass();
+    else if (oil) {
+        if (f(st.config.oilInactive) > 0.001f)
+            damageAllGlass();
+        else if (auto w = Desktop::focusState()->window())
+            if (auto* deco = glassDecorationFor(w))
+                deco->damageEntire();
+    }
+
+    const int oilMs = static_cast<int>(1000.0f / std::clamp(f(st.config.oilFps), 5.0f, 60.0f));
+    st.lightFast = active;
+    self->updateTimeout(active ? milliseconds(16) : oil ? milliseconds(drifting ? std::min(33, oilMs) : oilMs)
+                                                        : drifting ? milliseconds(33) : milliseconds(250));
+}
+
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     PHANDLE = handle;
 
@@ -516,6 +605,48 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     commitPendingLayers();
     validateConfig();
 
+    // Glass light listeners
+    g_pGlobalState->listeners.push_back(Event::bus()->m_events.input.mouse.move.listen(
+        [](const auto&, auto&) {
+            if (!g_pGlobalState)
+                return;
+            g_pGlobalState->cursorMoved = true;
+            armLightTimer();
+        }));
+    g_pGlobalState->listeners.push_back(Event::bus()->m_events.input.mouse.button.listen(
+        [](const auto& ev, auto&) {
+            if (!g_pGlobalState || ev.state != WL_POINTER_BUTTON_STATE_PRESSED || !GlassLight::glowOn())
+                return;
+            // the glass window under the pointer (the focused one if several overlap)
+            const Vector2D   cursor  = g_pInputManager->getMouseCoordsInternal();
+            const PHLWINDOW  focused = Desktop::focusState()->window();
+            PHLWINDOW        hit;
+            for (const auto& decoration : g_pGlobalState->decorations) {
+                auto* deco = decoration.get();
+                auto  w    = deco ? deco->getOwner() : nullptr;
+                if (!w || !w->getWindowMainSurfaceBox().containsPoint(cursor))
+                    continue;
+                hit = w;
+                if (w == focused)
+                    break;
+            }
+            if (!hit)
+                return;
+            g_pGlobalState->glowWindow = hit;
+            g_pGlobalState->glowPoint  = cursor;
+            g_pGlobalState->glowStart  = GlassLight::nowSeconds();
+            armLightTimer();
+        }));
+    // focus changes the rim light's strength per window
+    g_pGlobalState->listeners.push_back(Event::bus()->m_events.window.active.listen(
+        [](PHLWINDOW, Desktop::eFocusReason) {
+            if (g_pGlobalState)
+                damageAllGlass();
+        }));
+
+    g_pGlobalState->lightTimer = makeShared<CEventLoopTimer>(std::chrono::milliseconds(250), lightTick, nullptr);
+    g_pEventLoopManager->addTimer(g_pGlobalState->lightTimer);
+
     return {std::string(PLUGIN_NAME), std::string(PLUGIN_DESCRIPTION), std::string(PLUGIN_AUTHOR), std::string(PLUGIN_VERSION)};
 }
 
@@ -524,6 +655,12 @@ APICALL EXPORT void PLUGIN_EXIT() {
         return;
 
     g_pGlobalState->listeners.clear();
+
+    if (g_pGlobalState->lightTimer) {
+        g_pGlobalState->lightTimer->cancel();
+        g_pEventLoopManager->removeTimer(g_pGlobalState->lightTimer);
+        g_pGlobalState->lightTimer.reset();
+    }
 
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerPassElement");

@@ -5,6 +5,7 @@
 #include "ShaderManager.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
@@ -69,6 +70,29 @@ struct SGlobalState {
         if (mon)
             sceneGeneration[mon->m_id]++;
     }
+
+    // Glass light: redraw timer, pending cursor move, click glow, and the
+    // per-window values a decoration hands the renderer for its current draw.
+    SP<CEventLoopTimer> lightTimer;
+    bool                lightFast      = false;   // timer is on its 16 ms cadence
+    bool                cursorMoved    = false;
+    bool                lightWasActive = false;
+    PHLWINDOWREF        glowWindow;
+    Vector2D            glowPoint;                // click position, global logical
+    double              glowStart = -1e9;
+    Vector2D            smoothCursor;             // cursor as the light sees it (lagged)
+    bool                smoothCursorInit = false;
+    double              lastLightTick    = 0.0;
+    struct {
+        float    share       = 0.0f;   // 1 on the focused window, light_inactive elsewhere
+        float    materialize = 1.0f;   // 0..1, scales all bending
+        float    glow        = -1.0f;  // click glow progress, -1 = none
+        Vector2D lightPos;             // monitor-local px
+        Vector2D glowLocal;            // window-local px
+        Vector2D boxPos;               // window top-left, monitor-local px
+        Vector2D parallax;             // view shift behind the glass, px
+        float    oilShare = 0.0f;      // 1 focused, oil_inactive elsewhere
+    } lightFrame;
 
     // renderLayer hook
     CFunctionHook* renderLayerHook = nullptr;

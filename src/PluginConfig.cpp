@@ -43,6 +43,35 @@ std::optional<ELayerMaskMode> parseLayerMaskMode(std::string_view value) {
 void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::ENABLED, Config::INTEGER{1});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::MANAGE_WINDOW_BLUR, Config::INTEGER{1});
+
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_STRENGTH, Config::FLOAT{1.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_X, Config::FLOAT{0.25f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_Y, Config::FLOAT{-0.35f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_SHARPNESS, Config::FLOAT{4.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_WIDTH, Config::FLOAT{18.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_FAR, Config::FLOAT{0.35f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_BEND, Config::FLOAT{1.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_CURSOR, Config::FLOAT{0.5f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_INACTIVE, Config::FLOAT{0.6f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::GLOW_STRENGTH, Config::FLOAT{1.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::GLOW_DURATION, Config::FLOAT{0.7f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::GLOW_SPREAD, Config::FLOAT{1.2f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::GLOW_RING, Config::FLOAT{50.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::GLOW_FLEX, Config::FLOAT{1.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::MATERIALIZE_DURATION, Config::FLOAT{0.35f});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::LIGHT_COLOR, Config::INTEGER{0xFFFFFF});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_DRIFT, Config::FLOAT{0.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_DRIFT_PERIOD, Config::FLOAT{45.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_LAG, Config::FLOAT{0.25f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::PARALLAX_STRENGTH, Config::FLOAT{0.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::PARALLAX_DEPTH, Config::FLOAT{0.8f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_AMOUNT, Config::FLOAT{0.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_SPEED, Config::FLOAT{0.3f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_SCALE, Config::FLOAT{220.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_COLOR, Config::FLOAT{1.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_WARP, Config::FLOAT{0.6f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_INACTIVE, Config::FLOAT{1.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_FPS, Config::FLOAT{30.0f});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_THEME, Config::STRING{"dark"});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_PRESET, Config::STRING{"default"});
 
@@ -170,6 +199,35 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
 void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.enabled          = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::ENABLED);
     config.manageWindowBlur = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::MANAGE_WINDOW_BLUR);
+
+    config.lightStrength = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_STRENGTH);
+    config.lightX = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_X);
+    config.lightY = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_Y);
+    config.lightSharpness = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_SHARPNESS);
+    config.lightWidth = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_WIDTH);
+    config.lightFar = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_FAR);
+    config.lightBend = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_BEND);
+    config.lightCursor = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_CURSOR);
+    config.lightInactive = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_INACTIVE);
+    config.glowStrength = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::GLOW_STRENGTH);
+    config.glowDuration = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::GLOW_DURATION);
+    config.glowSpread = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::GLOW_SPREAD);
+    config.glowRing = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::GLOW_RING);
+    config.glowFlex = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::GLOW_FLEX);
+    config.materializeDuration = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::MATERIALIZE_DURATION);
+    config.lightColor = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LIGHT_COLOR);
+    config.lightDrift = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_DRIFT);
+    config.lightDriftPeriod = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_DRIFT_PERIOD);
+    config.lightLag = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIGHT_LAG);
+    config.parallaxStrength = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::PARALLAX_STRENGTH);
+    config.parallaxDepth = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::PARALLAX_DEPTH);
+    config.oilAmount = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_AMOUNT);
+    config.oilSpeed = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_SPEED);
+    config.oilScale = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_SCALE);
+    config.oilColor = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_COLOR);
+    config.oilWarp = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_WARP);
+    config.oilInactive = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_INACTIVE);
+    config.oilFps = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_FPS);
     config.defaultTheme  = getStringPtr(handle, ConfigKeys::DEFAULT_THEME);
     config.defaultPreset = getStringPtr(handle, ConfigKeys::DEFAULT_PRESET);
 

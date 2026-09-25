@@ -1,3 +1,4 @@
+#include "GlassLight.hpp"
 #include "GlassRenderer.hpp"
 #include "BuiltInPresets.hpp"
 #include "Globals.hpp"
@@ -212,6 +213,30 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         static_cast<float>((tintColorValue >> 8) & 0xFF) / 255.0f);
     glUniform1f(uniforms.tintAlpha,
         static_cast<float>(tintColorValue & 0xFF) / 255.0f);
+
+    {   // glass light: layers (mask != nullptr) never get it
+        using GlassLight::f;
+        const auto& c   = g_pGlobalState->config;
+        const auto& lf  = g_pGlobalState->lightFrame;
+        const bool  win = !mask;
+        const auto  mon = g_pHyprRenderer->m_renderData.pMonitor;
+        const float sc  = mon ? static_cast<float>(mon->m_scale) : 1.0f;
+        glUniform2f(uniforms.lightPos, static_cast<float>(lf.lightPos.x), static_cast<float>(lf.lightPos.y));
+        const float share = win ? lf.share : 0.0f;
+        glUniform4f(uniforms.lightA, f(c.lightStrength) * share, std::max(0.5f, f(c.lightSharpness)), f(c.lightWidth) * sc, f(c.lightFar));
+        glUniform4f(uniforms.lightB, f(c.lightBend) * share, win ? lf.glow : -1.0f, f(c.glowStrength), f(c.glowFlex));
+        const int64_t rgb = c.lightColor ? **c.lightColor : 0xFFFFFF;
+        glUniform3f(uniforms.lightColor, ((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f);
+        glUniform2f(uniforms.glowPoint, static_cast<float>(lf.glowLocal.x), static_cast<float>(lf.glowLocal.y));
+        const float reach = f(c.glowSpread) * static_cast<float>(std::max(transformedBox.width, transformedBox.height));
+        glUniform2f(uniforms.glowC, reach, f(c.glowRing) * sc);
+        glUniform1f(uniforms.materialize, win ? lf.materialize : 1.0f);
+        glUniform2f(uniforms.boxPos, static_cast<float>(transformedBox.x), static_cast<float>(transformedBox.y));
+        const double oilT = std::fmod(GlassLight::nowSeconds() * f(c.oilSpeed), 10000.0);
+        glUniform4f(uniforms.oilA, win ? f(c.oilAmount) * lf.oilShare : 0.0f, static_cast<float>(oilT), f(c.oilScale) * sc, f(c.oilColor));
+        glUniform4f(uniforms.oilB, f(c.oilWarp) * 8.0f * sc, 0.0f, 0.0f, 0.0f);
+        glUniform3f(uniforms.parallax, win ? static_cast<float>(lf.parallax.x) : 0.0f, win ? static_cast<float>(lf.parallax.y) : 0.0f, f(c.parallaxDepth));
+    }
 
     glUniform2f(uniforms.uvPadding,
         static_cast<float>(paddingRatio.x),
