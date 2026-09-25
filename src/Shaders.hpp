@@ -133,14 +133,18 @@ float getBevelSDF(vec2 uv, float k) {
     return -d;
 }
 
-// Outward surface normal of the bevel (gradient of the crease-free depth).
-vec2 outwardNormal(vec2 uv, float k) {
-    vec2  e  = vec2(1.0) / fullSize;
-    float dx = getBevelSDF(uv + vec2(e.x, 0.0), k) - getBevelSDF(uv - vec2(e.x, 0.0), k);
-    float dy = getBevelSDF(uv + vec2(0.0, e.y), k) - getBevelSDF(uv - vec2(0.0, e.y), k);
-    vec2 g = vec2(dx, dy);
-    float l = length(g);
-    return l > 1e-5 ? g / l : vec2(0.0);
+// Normal the light reads. The window's own corners are tight, so their normal
+// swings 90 degrees in a few px and the highlight pinches into a bright point
+// there. Light uses a much rounder box (radius R) instead, so it turns the
+// corner gradually and the lit band stays an even stroke.
+vec2 lightNormal(vec2 uv, float R) {
+    vec2  H = fullSize * 0.5;
+    vec2  p = (uv - 0.5) * fullSize;
+    R = min(R, min(H.x, H.y));
+    vec2  q = abs(p) - H + R;
+    vec2  n = (q.x > 0.0 && q.y > 0.0) ? normalize(q)
+            : (q.x > q.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
+    return n * sign(p);
 }
 
 // ============================================================================
@@ -246,7 +250,7 @@ void main() {
     // added light the rim still bends toward the light, and vice versa.
     if (lightA.x > 0.001 || abs(lightB.x) > 0.001) {
         vec2  p   = boxPos + uv * fullSize;
-        vec2  n   = outwardNormal(uv, bevelK);
+        vec2  n   = lightNormal(uv, max(radius, lightA.z * 6.0));
         vec2  L   = normalize(lightPos - p);
         float ndl = dot(n, L);
         float rim = exp(bevelSdf / max(lightA.z, 1.0));       // 1 at the edge, fading inward
