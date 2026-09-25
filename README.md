@@ -1,3 +1,72 @@
+# HyprGlass Liquid — Liquid Glass motion for Hyprland
+
+A fork of [**HyprGlass**](https://github.com/hyprnux/hyprglass) by [hyprnux](https://github.com/hyprnux) that adds Apple-style **motion** to the glass. Following Apple's own Liquid Glass logic, nothing animates on its own: light and movement come from what you do.
+
+![Liquid Glass motion](assets/liquid-glass-motion.gif)
+
+- **Light that follows you**: a light source over your whole desktop lights each window's rim where it faces it. Move a window or your pointer and the highlight slides round the rim.
+- **Parallax tilt**: the view behind the glass shifts against the pane as the cursor moves, like tilting thick glass.
+- **Oil film**: slow iridescent swirls on the glass, like oil on water.
+- **Click glow**: clicking a glass window energizes it: a ring of light spreads from the click and flexes the glass.
+- **Materialize**: new windows appear by bending into existence instead of fading.
+- **Crease-free bevel**: no seam along the corner diagonals.
+
+> **Status:** early, tested on **Hyprland 0.56.2** (Omarchy). Everything else from HyprGlass works as documented below.
+> For a one-command setup on Omarchy, with a live slider app (Glass Tuner), see [**omarchy-liquid-glass**](https://github.com/fasi96/omarchy-liquid-glass).
+
+### Install
+
+```bash
+hyprpm update
+hyprpm add https://github.com/fasi96/hyprglass
+hyprpm enable hyprglass
+```
+
+If you have upstream HyprGlass installed, remove it first (`hyprpm remove HyprGlass`): both provide the `hyprglass` plugin.
+
+### Motion options
+
+All global-only, set with `hl.plugin.hyprglass.config({ ... })` like the options below. Effects are off or subtle by default.
+
+| Option | Default | What it does |
+|---|---|---|
+| `light_strength` | `1.0` | Light added where the rim faces the light (0 = none; the glass can still bend) |
+| `light_bend` | `1.0` | How much the rim bends where it faces the light (0 = none) |
+| `light_x`, `light_y` | `0.25`, `-0.35` | Light position over all monitors: x 0 = left edge, 1 = right; y 0 = top, below 0 = above |
+| `light_cursor` | `0.5` | How far the light leans toward the cursor (0-1) |
+| `light_lag` | `0.25` | Seconds the light and parallax take to catch the cursor (0 = instant) |
+| `light_sharpness` | `4.0` | How tightly the highlight gathers |
+| `light_width` | `18` | How far into the glass the rim light reaches, px |
+| `light_far` | `0.35` | Soft reflection on the side facing away from the light |
+| `light_inactive` | `0.6` | Unfocused windows' share of the rim light |
+| `light_color` | `0xFFFFFF` | Light colour |
+| `light_drift`, `light_drift_period` | `0`, `45` | The light slowly wanders on its own (share of the desktop, seconds) |
+| `parallax_strength` | `0` | How far the view behind the glass shifts with the cursor, px (0 = off) |
+| `parallax_depth` | `0.8` | Extra shift toward the rim, so the glass reads as thick |
+| `oil_amount` | `0` | Oil-film sheen (0 = off) |
+| `oil_speed`, `oil_scale`, `oil_color`, `oil_warp` | `0.3`, `220`, `1.0`, `0.6` | Flow speed, swirl size px, 0 clear .. 1 rainbow, ripple of the view behind |
+| `oil_inactive`, `oil_fps` | `1.0`, `30` | Unfocused windows' share (0 = focused only), redraws per second while it flows |
+| `glow_strength`, `glow_flex` | `1.0`, `1.0` | Click glow light and glass flex (either can be 0) |
+| `glow_duration`, `glow_spread`, `glow_ring` | `0.7`, `1.2`, `50` | Seconds, share of the window, ring width px |
+| `materialize_duration` | `0.35` | Seconds a new window takes to materialize (0 = off) |
+
+Example:
+
+```lua
+if hl.plugin.hyprglass then
+  hl.plugin.hyprglass.config({
+    light_strength = 1.5, light_cursor = 0.6, parallax_strength = 12,
+    oil_amount = 0.35, materialize_duration = 0.45,
+  })
+end
+```
+
+The glass only shows through see-through windows, e.g. a terminal with a transparent background (foot: `alpha=` under `[colors-dark]`).
+
+---
+
+*Everything below is the original HyprGlass documentation.*
+
 # HyprGlass - Liquid Glass inspired plugin for Hyprland
 
 Liquid Glass for [Hyprland](https://hyprland.org/).
