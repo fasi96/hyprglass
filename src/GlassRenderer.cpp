@@ -556,6 +556,19 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     shader->setUniformFloat(SHADER_RADIUS, cornerRadius);
     shader->setUniformFloat(SHADER_ROUNDING_POWER, safeRoundingPower);
 
+    // Subsurface items only: SDF sub-rect within the drawn box (see
+    // SMaskInfo::glassBoxSizePx). Sentinel (negative) falls back to the whole
+    // box — windows and alpha-mask layers always take this path, unchanged
+    // from before this uniform existed.
+    Vector2D glassBoxOffsetPx{0.0, 0.0};
+    Vector2D glassBoxSizePx = fullSize;
+    if (mask && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
+        glassBoxOffsetPx = mask->glassBoxOffsetPx;
+        glassBoxSizePx   = mask->glassBoxSizePx;
+    }
+    glUniform2f(uniforms.glassBoxOffsetPx, static_cast<float>(glassBoxOffsetPx.x), static_cast<float>(glassBoxOffsetPx.y));
+    glUniform2f(uniforms.glassBoxSizePx, static_cast<float>(glassBoxSizePx.x), static_cast<float>(glassBoxSizePx.y));
+
     glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
 
     // Only finalDamage is copied to the screen, and elementDamage (which finalDamage is a

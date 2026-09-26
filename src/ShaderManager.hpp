@@ -49,6 +49,11 @@ struct SGlassUniforms {
     GLint regionRects = -1;
     GLint sampleUVOffset = -1;
     GLint sampleUVScale = -1;
+
+    // Subsurface item glass only: glass-box sub-rect the SDF is measured
+    // against, in box-local pixels (see Shaders.hpp).
+    GLint glassBoxOffsetPx = -1;
+    GLint glassBoxSizePx = -1;
 };
 
 struct SBlurUniforms {

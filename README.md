@@ -257,6 +257,34 @@ hg.layer("debug-panel", { exclude = true })
 
 > Layer support hooks into Hyprland's internal render pipeline. This is version-sensitive and may break across Hyprland updates.
 
+### Subsurface item glass
+
+Glass a `wl_subsurface` of a window (a toolbar capsule, a round button) instead of the whole window: the client attaches `ext-background-effect-v1` to that subsurface, and glass is drawn exactly in its requested region.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `subsurfaces:enabled` | bool | `false` (`0` in .conf) | Enable glass on subsurfaces that request it |
+| `subsurfaces:preset` | string | `""` | Preset override for all items. Falls back to `layers:preset`, then `default_preset` |
+| `subsurfaces:radius` | float | `-1` | Corner radius in logical px. `-1` (default) = capsule (fully rounded) |
+
+**Lua:**
+```lua
+hg.config({ subsurfaces = { enabled = true, preset = "subtle", radius = 12 } })
+```
+
+**Legacy .conf:**
+```ini
+plugin {
+    hyprglass {
+        subsurfaces {
+            enabled = 1
+            preset = subtle
+            radius = 12
+        }
+    }
+}
+```
+
 ### Window background cache
 
 Windows cache their sampled, blurred background and only re-sample it when something actually changed behind the window (it moved/resized, the window behind it changed, or the cache was just allocated) — the same idea as the layer `live_resample` cache above, always on.
@@ -267,7 +295,7 @@ Windows cache their sampled, blurred background and only re-sample it when somet
 | `windows:live_resample` | bool | `true` (`1` in .conf) | Re-render window glass when content behind it changes (e.g. a playing video, another window). GPU cost scales with background activity; static scenes stay free |
 | `windows:live_resample_fps` | int | `30` | Max background-dirty marks per second for windows. `0` = uncapped |
 
-> `hyprctl hyprglass stats` reports `win_hit`/`win_miss`/`win_defer`/`win_disc` (and `layer_hit`/`layer_miss`/`layer_defer` for layers) per monitor to watch the cache in action.
+> `hyprctl hyprglass stats` reports `win_hit`/`win_miss`/`win_defer`/`win_disc` (and `layer_hit`/`layer_miss`/`layer_defer` for layers, `sub_hit`/`sub_miss`/`sub_defer` for subsurface items) per monitor to watch the cache in action.
 
 ### Per-window overrides
 
@@ -405,9 +433,9 @@ hyprctl j/hyprglass stats        # same, as JSON
 hyprglass stats
   stage timers: off (plugin:hyprglass:debug:timers = 0)
 
-  monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  blur_pass  sampled_mpx  glass_mpx
-  eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3       5520        41.30      18.77
-  eDP-1          per frame: 0.47 win draws, 0.22 layer draws, 0.77 blur passes, 0.006 sampled mpx, 0.003 glass mpx
+  monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  sub_draws  sub_hit  sub_miss  sub_defer  blur_pass  sampled_mpx  glass_mpx
+  eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3        410      380        22          8       5520        41.30      18.77
+  eDP-1          per frame: 0.47 win draws, 0.22 layer draws, 0.06 sub draws, 0.77 blur passes, 0.006 sampled mpx, 0.003 glass mpx
 ```
 
 ## Notes

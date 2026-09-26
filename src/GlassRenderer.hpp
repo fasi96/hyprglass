@@ -77,6 +77,14 @@ struct SMaskInfo {
     // PROTOCOL_REGION layers only; see GlassLayerSurface.cpp.
     Vector2D sampleUVOffset{0.0, 0.0};
     Vector2D sampleUVScale{1.0, 1.0};
+
+    // Subsurface items only: the rounded-box SDF's own sub-rect within the
+    // drawn box, box-local pixels (see Shaders.hpp's glassBoxOffsetPx/SizePx).
+    // Sentinel (negative size) means "use the full drawn box", applyGlassEffect's
+    // old, unconditional behaviour — every other caller (windows, alpha-mask
+    // layers) leaves this at the default and sees no change at all.
+    Vector2D glassBoxOffsetPx{0.0, 0.0};
+    Vector2D glassBoxSizePx{-1.0, -1.0};
 };
 
 // Affine map from source-framebuffer pixels into the sample framebuffer.
