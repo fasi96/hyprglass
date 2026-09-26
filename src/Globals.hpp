@@ -18,6 +18,7 @@
 #include <vector>
 
 class CGlassDecoration;
+class CGlassSubsurfaceState;
 
 struct SGlobalState {
     // Event listeners are owned here so PLUGIN_EXIT unregisters them. Static
@@ -36,9 +37,29 @@ struct SGlobalState {
     // Shared blur temp framebuffer (reused across all decorations since they render sequentially)
     SP<Render::IFramebuffer> blurTempFramebuffer;
 
+    // Per-monitor temp FBO for subsurface item glass, shared serially by every
+    // glassed item on that monitor in a frame — a per-item copy would be one
+    // full-monitor-sized allocation each. Safe because items on the same
+    // monitor are visited one at a time: CGlassSubsurfacePassElement::draw()
+    // (redirect) and CGlassSubsurfaceCompositeElement::draw()
+    // (composite+restore) for one item always fully bracket each other before
+    // the next item's pair starts (see main.cpp's hkRenderPassAdd) — no two
+    // items on the same monitor ever have it redirected at once. Keyed by
+    // MONITORID rather than CMonitor* (same reasoning as sceneGeneration
+    // below); entries are dropped on monitor removal (see main.cpp).
+    std::unordered_map<MONITORID, SP<Render::IFramebuffer>> subsurfaceTempFramebuffers;
+
     // Layer surface glass state (one per tracked layer, keyed by raw pointer).
     // shared_ptr so CGlassLayerPassElement can hold a copy that survives map erasure mid-frame.
     std::unordered_map<Desktop::View::CLayerSurface*, std::shared_ptr<CGlassLayerSurface>> layerSurfaces;
+
+    // Subsurface item glass state, one per glassed wl_subsurface, keyed by a
+    // weak ref so a destroyed surface's entry is simply unreachable rather
+    // than needing an explicit teardown signal (unlike layers/windows,
+    // hyprglass has no destroy event for an arbitrary subsurface). hyprutils
+    // provides std::hash<CWeakPointer<T>> (see WeakPtr.hpp), same as
+    // watchedSurfaces below. Pruned lazily wherever it's walked (see main.cpp).
+    std::unordered_map<WP<CWLSurfaceResource>, std::shared_ptr<CGlassSubsurfaceState>> subsurfaceGlass;
 
     // Parsed namespace whitelist (empty = match all when layers enabled)
     std::unordered_set<std::string> layerNamespaceFilter;
@@ -130,6 +151,11 @@ struct SGlobalState {
 
     // renderLayer hook
     CFunctionHook* renderLayerHook = nullptr;
+
+    // Render::CRenderPass::add hook (subsurface item glass)
+    CFunctionHook* renderPassAddHook             = nullptr;
+    bool           renderPassAddSymbolFound      = false; // for the failure notification text
+    bool           subsurfaceHookFailureNotified = false;
 };
 
 using Render::GL::g_pHyprOpenGL;

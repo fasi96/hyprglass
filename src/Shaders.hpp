@@ -80,6 +80,15 @@ uniform int maskMode;          // 0 = alpha threshold, 1 = protocol region
 uniform int regionRectCount;   // 0..16
 uniform vec4 regionRects[16];  // box-local pixels: xy = offset from box top-left, zw = size
 
+// Subsurface item glass only: the rounded-box SDF (getCornerSDF below) is
+// evaluated over this sub-rect of the drawn box instead of the full box —
+// the item's blur-region extents, which can be smaller than its own surface
+// box (e.g. a capsule pill inside a wider hit-test area). Box-local pixels,
+// same space as regionRects. Windows and alpha-mask layers pass offset (0,0)
+// and size == fullSize, so the SDF is unchanged from the old whole-box math.
+uniform vec2 glassBoxOffsetPx;
+uniform vec2 glassBoxSizePx;
+
 // Maps this fragment's own box UV into the sample texture's normalized space
 // before uvPadding is applied. Identity (offset 0, scale 1) unless the sample
 // texture covers a smaller area than this box — PROTOCOL_REGION layers only,
@@ -122,16 +131,20 @@ float lpNorm(vec2 v, float p, float invP) {
     return pow(pow(abs(v.x), p) + pow(abs(v.y), p), invP);
 }
 
-float getRoundedBoxSDF(vec2 uv, float r) {
-    vec2 p = (uv - 0.5) * fullSize;
-    vec2 halfSize = fullSize * 0.5;
+// posPx/boxSizePx: pixel-space position relative to (and size of) the box the
+// SDF is measured against — the glass box (see glassBoxOffsetPx/SizePx above),
+// not necessarily the fragment's full drawn box.
+float getRoundedBoxSDF(vec2 posPx, vec2 boxSizePx, float r) {
+    vec2 p = posPx - boxSizePx * 0.5;
+    vec2 halfSize = boxSizePx * 0.5;
     float clampedR = min(r, min(halfSize.x, halfSize.y));
     vec2 q = abs(p) - halfSize + clampedR;
     return min(max(q.x, q.y), 0.0) + lpNorm(max(q, 0.0), roundingPower, invRoundingPower) - clampedR;
 }
 
 float getCornerSDF(vec2 uv) {
-    return getRoundedBoxSDF(uv, radius);
+    vec2 boxLocalPx = uv * fullSize - glassBoxOffsetPx;
+    return getRoundedBoxSDF(boxLocalPx, glassBoxSizePx, radius);
 }
 
 // ============================================================================
@@ -208,14 +221,29 @@ void main() {
         }
     }
 
-    float cornerSdf = getCornerSDF(uv);
+    float cornerSdf    = getCornerSDF(uv);
+    float cornerAlpha  = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
 
-    if (cornerSdf > 0.0) {
-        discard;
+    if (maskMode == 1) {
+        // Subsurface items: the glass box (glassBoxOffsetPx/SizePx) can be
+        // smaller than the item's own drawn box/region — e.g. a capsule glass
+        // shape inside a rectangular blur region. Outside it, fall back to the
+        // plain surface pixel instead of dropping it (a hard discard here would
+        // silently delete client content, like an icon, that simply isn't under
+        // the glass). cornerAlpha fades smoothly across the boundary (the same
+        // curve already used for glassA below), so this is an antialiased
+        // "glass * coverage, surface over" blend, not a hard cutover — the
+        // actual blend happens in the hasMask composite at the bottom of main().
+        if (cornerAlpha < 0.001) {
+            fragColor = surfacePixel;
+            return;
+        }
+    } else {
+        // Windows, and alpha-mask layers: no surface pixel to fall back to
+        // outside the glass shape, so this is exactly the old hard-edged cutoff.
+        if (cornerSdf > 0.0) discard;
+        if (cornerAlpha < 0.001) discard;
     }
-
-    float cornerAlpha = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
-    if (cornerAlpha < 0.001) discard;
 
     float minDim = min(fullSize.x, fullSize.y);
     float bezelWidthPx = edgeThickness * minDim;
@@ -224,8 +252,12 @@ void main() {
     // EDGE PROXIMITY + DIRECTION
     // edgeProximity: 1.0 at boundary, exponential decay inward
     // inwardDir: pixel-space direction toward center (smooth everywhere)
+    // Clamped to 1.0: cornerSdf can be positive here (maskMode==1's glass box
+    // can be smaller than fullSize, so fragments just outside it still reach
+    // this code with cornerAlpha > 0.001), and exp() of a positive value would
+    // otherwise overshoot every effect that scales off edgeProximity.
     // ========================================
-    float edgeProximity = exp(cornerSdf * invBezelWidthPx);
+    float edgeProximity = min(exp(cornerSdf * invBezelWidthPx), 1.0);
     vec2 inwardDir = refractionDir(uv);
     vec2 posPx = (uv - 0.5) * fullSize; // pixel-space position for the edge-flow direction below
 

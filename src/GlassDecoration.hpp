@@ -46,6 +46,14 @@ class CGlassDecoration : public IHyprWindowDecoration {
     // every watched surface commit, so it must not walk the preset chain.
     [[nodiscard]] float lastSelfSample() const { return m_lastSelfSample; }
 
+    // Public wrappers around the private tag/config resolution below, so other
+    // glass consumers that key off this window (subsurface item glass — see
+    // GlassSubsurfaceState.cpp) apply exactly the same enable/disable rules and
+    // theme/preset tags as the window's own glass, without duplicating them.
+    [[nodiscard]] bool        isGlassEnabled() const { return resolveEnabled() == EEnabledResolution::Enabled; }
+    [[nodiscard]] bool        isThemeDark() const { return resolveThemeIsDark(); }
+    [[nodiscard]] std::string presetName() const { return resolvePresetName(); }
+
     // Weak over the UP Hyprland owns: use .get()/-> only, never .lock().
     WP<CGlassDecoration> m_self;
 

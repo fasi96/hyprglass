@@ -57,6 +57,8 @@ constexpr std::array<std::string_view, STAGE_COUNT> STAGE_NAMES = {
     "apply_glass_effect",
     "layer_sample",
     "layer_composite",
+    "subsurface_sample",
+    "subsurface_composite",
 };
 
 // Only one GL_TIME_ELAPSED query may be open across the whole GL context at
@@ -147,12 +149,15 @@ std::string formatStats(eHyprCtlOutputFormat format) {
             json += std::format(
                 "    {{\"name\": \"{}\", \"frames\": {}, \"windowGlassDraws\": {}, \"windowOpaqueSkipped\": {}, "
                 "\"windowCacheHits\": {}, \"windowCacheMisses\": {}, \"windowDeferredResamples\": {}, \"windowPassDiscarded\": {}, "
-                "\"layerGlassDraws\": {}, \"layerCacheHits\": {}, \"layerCacheMisses\": {}, \"layerDeferredResamples\": {}, \"blurPasses\": {}, "
+                "\"layerGlassDraws\": {}, \"layerCacheHits\": {}, \"layerCacheMisses\": {}, \"layerDeferredResamples\": {}, "
+                "\"subsurfaceGlassDraws\": {}, \"subsurfaceCacheHits\": {}, \"subsurfaceCacheMisses\": {}, \"subsurfaceDeferredResamples\": {}, "
+                "\"blurPasses\": {}, "
                 "\"sampledMegapixels\": {:.3f}, \"glassMegapixels\": {:.3f}, \"stageTimersAvgMicroseconds\": {{",
                 escapeJSONStrings(monitorLabel(id)), counters.frames, counters.windowGlassDraws, counters.windowOpaqueSkipped,
                 counters.windowCacheHits, counters.windowCacheMisses, counters.windowDeferredResamples, counters.windowPassDiscarded,
-                counters.layerGlassDraws, counters.layerCacheHits, counters.layerCacheMisses, counters.layerDeferredResamples, counters.blurPasses,
-                counters.sampledMegapixels, counters.glassMegapixels);
+                counters.layerGlassDraws, counters.layerCacheHits, counters.layerCacheMisses, counters.layerDeferredResamples,
+                counters.subsurfaceGlassDraws, counters.subsurfaceCacheHits, counters.subsurfaceCacheMisses, counters.subsurfaceDeferredResamples,
+                counters.blurPasses, counters.sampledMegapixels, counters.glassMegapixels);
 
             const auto& stageNanoseconds = stageNanosecondsFor(id);
             for (size_t i = 0; i < STAGE_COUNT; i++) {
@@ -182,25 +187,26 @@ std::string formatStats(eHyprCtlOutputFormat format) {
         out += "  (no frames recorded yet)\n";
 
     out += std::format(
-        "\n  {:<14} {:>8} {:>10} {:>12} {:>9} {:>9} {:>10} {:>9} {:>12} {:>10} {:>10} {:>11} {:>10} {:>12} {:>11}\n", "monitor",
-        "frames", "win_draws", "opaque_skip", "win_hit", "win_miss", "win_defer", "win_disc", "layer_draws", "layer_hit",
-        "layer_miss", "layer_defer", "blur_pass", "sampled_mpx", "glass_mpx");
+        "\n  {:<14} {:>8} {:>10} {:>12} {:>9} {:>9} {:>10} {:>9} {:>12} {:>10} {:>10} {:>11} {:>10} {:>12} {:>11} {:>11} {:>10} {:>12} {:>11}\n",
+        "monitor", "frames", "win_draws", "opaque_skip", "win_hit", "win_miss", "win_defer", "win_disc", "layer_draws", "layer_hit",
+        "layer_miss", "layer_defer", "sub_draws", "sub_hit", "sub_miss", "sub_defer", "blur_pass", "sampled_mpx", "glass_mpx");
 
     for (const auto& [id, counters] : s_counters) {
         out += std::format(
-            "  {:<14} {:>8} {:>10} {:>12} {:>9} {:>9} {:>10} {:>9} {:>12} {:>10} {:>10} {:>11} {:>10} {:>12.2f} {:>11.2f}\n",
+            "  {:<14} {:>8} {:>10} {:>12} {:>9} {:>9} {:>10} {:>9} {:>12} {:>10} {:>10} {:>11} {:>10} {:>12} {:>11} {:>11} {:>10} {:>12.2f} {:>11.2f}\n",
             monitorLabel(id), counters.frames, counters.windowGlassDraws, counters.windowOpaqueSkipped, counters.windowCacheHits,
             counters.windowCacheMisses, counters.windowDeferredResamples, counters.windowPassDiscarded, counters.layerGlassDraws,
-            counters.layerCacheHits, counters.layerCacheMisses, counters.layerDeferredResamples, counters.blurPasses,
-            counters.sampledMegapixels, counters.glassMegapixels);
+            counters.layerCacheHits, counters.layerCacheMisses, counters.layerDeferredResamples,
+            counters.subsurfaceGlassDraws, counters.subsurfaceCacheHits, counters.subsurfaceCacheMisses, counters.subsurfaceDeferredResamples,
+            counters.blurPasses, counters.sampledMegapixels, counters.glassMegapixels);
 
         if (counters.frames > 0) {
             const double frames = static_cast<double>(counters.frames);
             out += std::format(
-                "  {:<14} per frame: {:.2f} win draws, {:.2f} layer draws, {:.2f} blur passes, {:.3f} sampled mpx, {:.3f} glass mpx\n",
+                "  {:<14} per frame: {:.2f} win draws, {:.2f} layer draws, {:.2f} sub draws, {:.2f} blur passes, {:.3f} sampled mpx, {:.3f} glass mpx\n",
                 "", static_cast<double>(counters.windowGlassDraws) / frames, static_cast<double>(counters.layerGlassDraws) / frames,
-                static_cast<double>(counters.blurPasses) / frames, counters.sampledMegapixels / frames,
-                counters.glassMegapixels / frames);
+                static_cast<double>(counters.subsurfaceGlassDraws) / frames, static_cast<double>(counters.blurPasses) / frames,
+                counters.sampledMegapixels / frames, counters.glassMegapixels / frames);
 
             if (timersOn && timersReady) {
                 const auto& stageNanoseconds = stageNanosecondsFor(id);
@@ -263,6 +269,22 @@ void recordLayerCacheMiss(MONITORID monitor) {
 
 void recordLayerDeferredResample(MONITORID monitor) {
     countersFor(monitor).layerDeferredResamples++;
+}
+
+void recordSubsurfaceGlassDraw(MONITORID monitor) {
+    countersFor(monitor).subsurfaceGlassDraws++;
+}
+
+void recordSubsurfaceCacheHit(MONITORID monitor) {
+    countersFor(monitor).subsurfaceCacheHits++;
+}
+
+void recordSubsurfaceCacheMiss(MONITORID monitor) {
+    countersFor(monitor).subsurfaceCacheMisses++;
+}
+
+void recordSubsurfaceDeferredResample(MONITORID monitor) {
+    countersFor(monitor).subsurfaceDeferredResamples++;
 }
 
 void recordBlurPasses(MONITORID monitor, uint64_t passes) {
