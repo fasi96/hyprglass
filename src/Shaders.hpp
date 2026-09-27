@@ -147,6 +147,40 @@ float getCornerSDF(vec2 uv) {
     return getRoundedBoxSDF(boxLocalPx, glassBoxSizePx, radius);
 }
 
+// Edge distance for the bevel, crease-free. Inside the window, getCornerSDF is
+// max(q.x, q.y) - r: the distance to whichever edge is nearer. That has a crease
+// along each corner's 45-degree diagonal, so the edge refraction (and anything
+// else driven by edgeProximity) shows a straight seam in all four corners.
+//
+// Here the contour lines are rounded rectangles that match the window outline
+// exactly at the edge (depth 0) and get rounder going inward: at depth d the box
+// is inset by d and its corner radius is r + d. The radius only grows, so the
+// top and side bevels always blend round the corner. Per pixel the depth is a
+// closed-form quadratic in the corner zone:
+//   |a + 2d| = r + d,  a = |p| - halfSize + r   =>   7d^2 + (4(ax+ay) - 2r) d + |a|^2 - r^2 = 0
+// and the plain straight-edge distance elsewhere. Past depth (h - r) / 2, with h
+// the smaller half-size, the radius would outgrow the inset box: from there the
+// contours are stadiums, i.e. the plain distance to the box rounded by h (so a
+// capsule gets its exact distance everywhere).
+float getBevelSDF(vec2 uv) {
+    vec2  H = glassBoxSizePx * 0.5;
+    float h = min(H.x, H.y);
+    float r = min(radius, h);
+    vec2  p = abs(uv * fullSize - glassBoxOffsetPx - H);
+    vec2  a = p - H + r;
+    float d = min(r - a.x, r - a.y);                      // straight-edge depth
+    float B = 4.0 * (a.x + a.y) - 2.0 * r;
+    float C = dot(a, a) - r * r;
+    float disc = B * B - 28.0 * C;
+    if (disc >= 0.0) {
+        float dc = (-B + sqrt(disc)) / 14.0;
+        if (a.x + 2.0 * dc >= 0.0 && a.y + 2.0 * dc >= 0.0)
+            d = dc;                                        // in a corner zone: the rounded contour
+    }
+    vec2 s = p - H + h;
+    return -max(d, h - length(max(s, 0.0)) - min(max(s.x, s.y), 0.0));
+}
+
 // ============================================================================
 // REFRACTION DIRECTION
 // Pixel-space direction toward window center — perfectly smooth everywhere,
@@ -257,7 +291,10 @@ void main() {
     // this code with cornerAlpha > 0.001), and exp() of a positive value would
     // otherwise overshoot every effect that scales off edgeProximity.
     // ========================================
-    float edgeProximity = min(exp(cornerSdf * invBezelWidthPx), 1.0);
+    // crease-free bevel distance, so the edge has no seam along the corner diagonals;
+    // it assumes circular corners, so a superellipse outline keeps the exact SDF
+    float bevelSdf = roundingPower == 2.0 ? getBevelSDF(uv) : cornerSdf;
+    float edgeProximity = min(exp(bevelSdf * invBezelWidthPx), 1.0);
     vec2 inwardDir = refractionDir(uv);
     vec2 posPx = (uv - 0.5) * fullSize; // pixel-space position for the edge-flow direction below
 
@@ -272,7 +309,7 @@ void main() {
     float lensFalloff = edgeProximity;
     if (refractionSpread < 0.999) {
         // rim-only lens: window the exponential tail so the centre stays flat
-        float depth = -cornerSdf;
+        float depth = -bevelSdf;
         float tailWindow = 1.0 - smoothstep(1.5 * bezelWidthPx, 3.0 * bezelWidthPx, depth);
         lensFalloff = mix(edgeProximity * tailWindow, edgeProximity, refractionSpread);
     }
