@@ -285,6 +285,15 @@ plugin {
 }
 ```
 
+A client app can hint its own preset and shape per item via the `hyprglass_item_v1` Wayland protocol (`protocols/hyprglass-item-v1.xml`), overriding the config above for that one item:
+
+- `set_preset` / `unset_preset` — request a named preset for this item, or clear the hint
+- `set_shape` — clip the effect to an explicit rect with up to four independent corner radii, in the item's own local coordinates
+- `set_inherit_shape` — shape the item like its parent window instead: same corners, same rounding curve
+- `unset_shape` — clear the shape hint
+
+An item that sends no hints, or a preset name the compositor doesn't recognize, gets `subsurfaces:radius`'s capsule/rounded-rect shape over its blur region and the preset chain above.
+
 ### Window background cache
 
 Windows cache their sampled, blurred background and only re-sample it when something actually changed behind the window (it moved/resized, the window behind it changed, or the cache was just allocated) — the same idea as the layer `live_resample` cache above, always on.

@@ -33,7 +33,7 @@ precision highp float;
 uniform sampler2D tex;
 uniform vec2 fullSize;
 uniform vec2 invFullSize;      // = 1.0 / fullSize, hoisted out of the per-pixel divisions below
-uniform float radius;
+uniform vec4 radii;            // per-corner radius: top-left, top-right, bottom-right, bottom-left
 uniform vec2 uvPadding;
 
 uniform float refractionStrength;
@@ -131,12 +131,24 @@ float lpNorm(vec2 v, float p, float invP) {
     return pow(pow(abs(v.x), p) + pow(abs(v.y), p), invP);
 }
 
+// Quadrant lookup for the per-corner radius. p is measured from the box
+// center (as getRoundedBoxSDF/getBevelSDF compute it below): negative y is
+// the top half (v_texcoord grows downward — see the specular highlight's
+// 1.0 - uv.y), negative x is the left half. cornerRadii is (top-left,
+// top-right, bottom-right, bottom-left).
+float pickCornerRadius(vec2 p, vec4 cornerRadii) {
+    float top    = p.x < 0.0 ? cornerRadii.x : cornerRadii.y;
+    float bottom = p.x < 0.0 ? cornerRadii.w : cornerRadii.z;
+    return p.y < 0.0 ? top : bottom;
+}
+
 // posPx/boxSizePx: pixel-space position relative to (and size of) the box the
 // SDF is measured against — the glass box (see glassBoxOffsetPx/SizePx above),
 // not necessarily the fragment's full drawn box.
-float getRoundedBoxSDF(vec2 posPx, vec2 boxSizePx, float r) {
+float getRoundedBoxSDF(vec2 posPx, vec2 boxSizePx, vec4 cornerRadii) {
     vec2 p = posPx - boxSizePx * 0.5;
     vec2 halfSize = boxSizePx * 0.5;
+    float r = pickCornerRadius(p, cornerRadii);
     float clampedR = min(r, min(halfSize.x, halfSize.y));
     vec2 q = abs(p) - halfSize + clampedR;
     return min(max(q.x, q.y), 0.0) + lpNorm(max(q, 0.0), roundingPower, invRoundingPower) - clampedR;
@@ -144,7 +156,7 @@ float getRoundedBoxSDF(vec2 posPx, vec2 boxSizePx, float r) {
 
 float getCornerSDF(vec2 uv) {
     vec2 boxLocalPx = uv * fullSize - glassBoxOffsetPx;
-    return getRoundedBoxSDF(boxLocalPx, glassBoxSizePx, radius);
+    return getRoundedBoxSDF(boxLocalPx, glassBoxSizePx, radii);
 }
 
 // Edge distance for the bevel, crease-free. Inside the window, getCornerSDF is
@@ -165,8 +177,9 @@ float getCornerSDF(vec2 uv) {
 float getBevelSDF(vec2 uv) {
     vec2  H = glassBoxSizePx * 0.5;
     float h = min(H.x, H.y);
-    float r = min(radius, h);
-    vec2  p = abs(uv * fullSize - glassBoxOffsetPx - H);
+    vec2  signedP = uv * fullSize - glassBoxOffsetPx - H;
+    float r = min(pickCornerRadius(signedP, radii), h);
+    vec2  p = abs(signedP);
     vec2  a = p - H + r;
     float d = min(r - a.x, r - a.y);                      // straight-edge depth
     float B = 4.0 * (a.x + a.y) - 2.0 * r;

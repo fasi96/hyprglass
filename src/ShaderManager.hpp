@@ -37,6 +37,7 @@ struct SGlassUniforms {
     GLint specularAngle = -1;
     GLint invFullSize = -1;
     GLint invRoundingPower = -1;
+    GLint radii = -1; // per-corner radius: top-left, top-right, bottom-right, bottom-left
 
     // Layers only: temp FBO surface mask for content-aware glass
     GLint maskTex = -1;

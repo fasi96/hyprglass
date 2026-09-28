@@ -9,6 +9,7 @@
 #include "GlassSubsurfacePassElement.hpp"
 #include "GlassSubsurfaceState.hpp"
 #include "Globals.hpp"
+#include "ItemHints.hpp"
 #include "PluginConfig.hpp"
 #include "RenderGuards.hpp"
 #include "SubsurfaceGeometry.hpp"
@@ -835,12 +836,20 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     refreshSurfaceObserver();
     notifySubsurfaceHookFailure();
 
+    // Last: a PLUGIN_INIT that throws is unloaded without PLUGIN_EXIT, which
+    // would leave the persistent helper calling back into this library.
+    ItemHints::init();
+
     return {std::string(PLUGIN_NAME), std::string(PLUGIN_DESCRIPTION), std::string(PLUGIN_AUTHOR), std::string(PLUGIN_VERSION)};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     if (!g_pGlobalState)
         return;
+
+    // Withdraws the global and clears every callback into this plugin before
+    // anything else runs, since the helper library itself is never unloaded.
+    ItemHints::exit();
 
     g_pGlobalState->listeners.clear();
     BackgroundDamageObserver::setEnabled(false);

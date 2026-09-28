@@ -2,6 +2,7 @@
 
 #include "WindowGeometry.hpp"
 
+#include <array>
 #include <cmath>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/helpers/math/Math.hpp>
@@ -93,6 +94,31 @@ namespace SubsurfaceGeometry {
     region.transform(Math::wlTransformToHyprutils(Math::invertTransform(monitor->m_transform)),
                       monitor->m_transformedSize.x, monitor->m_transformedSize.y);
     return region;
+}
+
+// Permutes the four corner radii (top-left, top-right, bottom-right,
+// bottom-left) to follow the same rotation/mirror WindowGeometry::
+// applyMonitorTransform() applies to a box: a rigid transform maps a
+// rectangle's corners onto one another independent of its size or position,
+// so this permutation depends only on the monitor's transform. Uses the
+// identical transform value applyMonitorTransform() derives, so a radii
+// array and a box transformed through the two never disagree about which
+// corner is which. A no-op whenever all four radii are equal.
+[[nodiscard]] inline std::array<float, 4> permuteRadiiForMonitorTransform(const std::array<float, 4>& radii, PHLMONITOR monitor) {
+    if (!monitor)
+        return radii;
+
+    switch (Math::wlTransformToHyprutils(Math::invertTransform(monitor->m_transform))) {
+        case HYPRUTILS_TRANSFORM_NORMAL: return radii;
+        case HYPRUTILS_TRANSFORM_90: return {radii[3], radii[0], radii[1], radii[2]};
+        case HYPRUTILS_TRANSFORM_180: return {radii[2], radii[3], radii[0], radii[1]};
+        case HYPRUTILS_TRANSFORM_270: return {radii[1], radii[2], radii[3], radii[0]};
+        case HYPRUTILS_TRANSFORM_FLIPPED: return {radii[1], radii[0], radii[3], radii[2]};
+        case HYPRUTILS_TRANSFORM_FLIPPED_90: return {radii[0], radii[3], radii[2], radii[1]};
+        case HYPRUTILS_TRANSFORM_FLIPPED_180: return {radii[3], radii[2], radii[1], radii[0]};
+        case HYPRUTILS_TRANSFORM_FLIPPED_270: return {radii[2], radii[1], radii[0], radii[3]};
+    }
+    return radii;
 }
 
 } // namespace SubsurfaceGeometry
