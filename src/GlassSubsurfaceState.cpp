@@ -52,7 +52,10 @@ bool CGlassSubsurfaceState::resolveThemeIsDark() const {
     return true;
 }
 
-std::string CGlassSubsurfaceState::resolvePresetName() const {
+std::string CGlassSubsurfaceState::resolvePresetName(SPresetHintOutcome* hintOutcome) const {
+    if (hintOutcome)
+        *hintOutcome = {};
+
     try {
         const auto& config = g_pGlobalState->config;
 
@@ -62,12 +65,17 @@ std::string CGlassSubsurfaceState::resolvePresetName() const {
         // through to the chain below (protocols/hyprglass-item-v1.xml).
         if (const auto surface = m_surface.lock()) {
             if (const auto hints = ItemHints::forSurface(surface.get())) {
-                if (!hints->preset.empty() && g_pGlobalState->customPresets.contains(hints->preset))
-                    return hints->preset;
+                if (!hints->preset.empty()) {
+                    const bool known = g_pGlobalState->customPresets.contains(hints->preset);
+                    if (hintOutcome)
+                        *hintOutcome = {hints->preset, !known};
+                    if (known)
+                        return hints->preset;
+                }
             }
         }
 
-        // subsurfaces:preset (highest priority)
+        // subsurfaces:preset
         const auto subsurfacesPreset = readStringConfig(config.subsurfacesPreset);
         if (!subsurfacesPreset.empty())
             return std::string(subsurfacesPreset);
@@ -226,7 +234,8 @@ void CGlassSubsurfaceState::compositeAndRestore(PHLMONITOR monitor, const CBox& 
     Diagnostics::recordSubsurfaceGlassDraw(monitor->m_id);
 
     const bool            isDark = resolveThemeIsDark();
-    const std::string     preset = resolvePresetName();
+    SPresetHintOutcome    presetHint;
+    const std::string     preset = resolvePresetName(&presetHint);
     const SResolveContext ctx    = {preset, isDark, g_pGlobalState->config, g_pGlobalState->customPresets};
 
     float roundingPower = 2.0f;
@@ -350,4 +359,19 @@ void CGlassSubsurfaceState::compositeAndRestore(PHLMONITOR monitor, const CBox& 
                                      mutableRawBox, mutableTransformBox, alpha,
                                      radii, roundingPower, m_samplePaddingRatio, ctx,
                                      &maskInfo);
+
+    // Record the box/radii/roundingPower/preset already computed above for
+    // `hyprctl hyprglass items` (Diagnostics.cpp) — a negative glassBoxSizePx
+    // is the sentinel meaning "whole box" (see SMaskInfo), same fallback the
+    // shader itself applies.
+    m_lastGlassBox = maskInfo.glassBoxSizePx.x >= 0.0 && maskInfo.glassBoxSizePx.y >= 0.0 ?
+        CBox{transformBox.x + maskInfo.glassBoxOffsetPx.x, transformBox.y + maskInfo.glassBoxOffsetPx.y,
+             maskInfo.glassBoxSizePx.x, maskInfo.glassBoxSizePx.y} :
+        transformBox;
+    m_lastRadii          = radii;
+    m_lastRoundingPower  = roundingPower;
+    m_lastResolvedPreset = preset;
+    m_lastPresetHint     = std::move(presetHint);
+    m_lastMonitorName    = monitor->m_name;
+    m_hasDrawnOnce       = true;
 }

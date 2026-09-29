@@ -435,7 +435,7 @@ hyprctl plugin unload /path/to/hyprglass.so
 ```bash
 hyprctl hyprglass stats          # per-monitor counters and (if enabled) stage timers
 hyprctl hyprglass stats reset    # zero every counter and accumulated timer
-hyprctl j/hyprglass stats        # same, as JSON
+hyprctl -j hyprglass stats       # same, as JSON
 ```
 
 ```
@@ -445,6 +445,23 @@ hyprglass stats
   monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  sub_draws  sub_hit  sub_miss  sub_defer  blur_pass  sampled_mpx  glass_mpx
   eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3        410      380        22          8       5520        41.30      18.77
   eDP-1          per frame: 0.47 win draws, 0.22 layer draws, 0.06 sub draws, 0.77 blur passes, 0.006 sampled mpx, 0.003 glass mpx
+```
+
+`hyprctl hyprglass items` lists every live subsurface glass item (`hyprglass_item_v1` protocol), its resolved preset and the box/radii it last drew with:
+
+```bash
+hyprctl hyprglass items
+hyprctl -j hyprglass items       # same, as JSON
+```
+
+```
+hyprglass items
+  subsurfaces:enabled: on   hyprglass_item_v1 protocol: active
+
+  window                         monitor    shape     preset (requested -> resolved)
+  0x55f2a1b2c3d4 (kitty)         eDP-1      explicit  hx-frosted-menu (unknown) -> default
+      hint rect: 12.0,8.0 240.0x32.0px  radii 8.0,8.0,8.0,8.0 (logical px)
+      last drawn: box 620.0,140.0 480.0x64.0px  radii 16.0,16.0,16.0,16.0  roundingPower 2.00 (physical px)
 ```
 
 ## Notes

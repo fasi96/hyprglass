@@ -28,4 +28,6 @@ namespace ItemHints {
     void exit();
     // Hints latched by the surface's last applied commit; nullopt when the surface has no active item.
     std::optional<SItemHints> forSurface(CWLSurfaceResource* surface);
+    // True once the helper is loaded and the wayland global is advertised (between init() succeeding and exit()).
+    bool active();
 }

@@ -169,6 +169,10 @@ void ItemHints::exit() {
     g_api = nullptr;
 }
 
+bool ItemHints::active() {
+    return g_api != nullptr;
+}
+
 std::optional<SItemHints> ItemHints::forSurface(CWLSurfaceResource* surface) {
     if (!g_api)
         return std::nullopt;
