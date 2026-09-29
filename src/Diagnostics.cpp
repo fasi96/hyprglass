@@ -1,5 +1,7 @@
 #include "Diagnostics.hpp"
 #include "Globals.hpp"
+#include "GlassSubsurfaceState.hpp"
+#include "ItemHints.hpp"
 
 #include <array>
 #include <chrono>
@@ -8,11 +10,13 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include <EGL/egl.h>
 #include <GLES3/gl32.h>
 #include <GLES2/gl2ext.h>
 
+#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/helpers/MiscFunctions.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
@@ -131,6 +135,142 @@ std::string monitorLabel(MONITORID id) {
             return monitor->m_name;
     }
     return std::format("monitor {}", id);
+}
+
+std::string shapeModeLabel(eItemShapeMode mode) {
+    switch (mode) {
+        case eItemShapeMode::EXPLICIT: return "explicit";
+        case eItemShapeMode::INHERIT_WINDOW: return "inherit";
+        default: return "none";
+    }
+}
+
+// Hint and resolution must come from the same draw, or a hint committed since
+// would be labelled with the previous hint's verdict.
+std::string presetField(const CGlassSubsurfaceState& state, const std::optional<SItemHints>& liveHints) {
+    if (!state.hasDrawnOnce())
+        return std::format("{} -> -", liveHints && !liveHints->preset.empty() ? liveHints->preset : "-");
+
+    const auto& hint = state.lastPresetHint();
+    if (hint.requested.empty())
+        return std::format("- -> {}", state.lastResolvedPreset());
+    if (hint.rejected)
+        return std::format("{} (unknown) -> {}", hint.requested, state.lastResolvedPreset());
+    return hint.requested;
+}
+
+std::string jsonBox(double x, double y, double width, double height) {
+    return std::format("\"x\": {:.1f}, \"y\": {:.1f}, \"width\": {:.1f}, \"height\": {:.1f}", x, y, width, height);
+}
+
+template <typename T>
+std::string jsonRadii(const T& radii) {
+    return std::format("[{:.1f}, {:.1f}, {:.1f}, {:.1f}]", radii[0], radii[1], radii[2], radii[3]);
+}
+
+std::string windowField(const PHLWINDOWREF& windowRef) {
+    const auto window = windowRef.lock();
+    if (!window)
+        return "-";
+    return std::format("0x{:x} ({})", reinterpret_cast<uintptr_t>(window.get()), window->m_class.empty() ? "-" : window->m_class);
+}
+
+std::string formatItems(eHyprCtlOutputFormat format) {
+    struct SLiveItem {
+        WP<CWLSurfaceResource>                surface;
+        std::shared_ptr<CGlassSubsurfaceState> state;
+    };
+
+    std::vector<SLiveItem> live;
+    if (g_pGlobalState) {
+        for (const auto& [surface, state] : g_pGlobalState->subsurfaceGlass) {
+            if (surface.expired() || !state)
+                continue;
+            live.push_back({surface, state});
+        }
+    }
+
+    const bool subsurfacesEnabled = g_pGlobalState && g_pGlobalState->config.subsurfacesEnabled && **g_pGlobalState->config.subsurfacesEnabled;
+    const bool protocolActive     = ItemHints::active();
+
+    if (format == eHyprCtlOutputFormat::FORMAT_JSON) {
+        std::string json = std::format("{{\n  \"subsurfacesEnabled\": {}, \"protocolActive\": {}, \"items\": [\n",
+                                        subsurfacesEnabled ? "true" : "false", protocolActive ? "true" : "false");
+
+        bool first = true;
+        for (const auto& entry : live) {
+            const auto  surface = entry.surface.lock();
+            const auto  hints   = surface ? ItemHints::forSurface(surface.get()) : std::nullopt;
+            const auto  window  = entry.state->window().lock();
+            const auto& state   = *entry.state;
+            const bool  drawn   = state.hasDrawnOnce();
+
+            if (!first)
+                json += ",\n";
+            first = false;
+
+            // Hint preset and verdict are the last draw's (see presetField); before any draw, the live hint.
+            const std::string hintPreset = drawn ? state.lastPresetHint().requested : (hints ? hints->preset : "");
+
+            std::string hintShape = "null";
+            if (hints && hints->shapeMode == eItemShapeMode::EXPLICIT)
+                hintShape = std::format("{{{}, \"radii\": {}}}", jsonBox(hints->x, hints->y, hints->width, hints->height), jsonRadii(hints->radii));
+
+            std::string lastDrawn = "null";
+            if (drawn) {
+                const auto& box = state.lastGlassBox();
+                lastDrawn       = std::format("{{\"monitor\": \"{}\", {}, \"radii\": {}, \"roundingPower\": {:.2f}}}", escapeJSONStrings(state.lastMonitorName()),
+                                              jsonBox(box.x, box.y, box.w, box.h), jsonRadii(state.lastRadii()), state.lastRoundingPower());
+            }
+
+            json += std::format("    {{\"window\": \"{}\", \"windowClass\": \"{}\", \"shapeMode\": \"{}\", \"hintPreset\": \"{}\", "
+                                "\"hintPresetRejected\": {}, \"resolvedPreset\": \"{}\", \"hintShape\": {}, \"lastDrawn\": {}}}",
+                                window ? std::format("0x{:x}", reinterpret_cast<uintptr_t>(window.get())) : "", escapeJSONStrings(window ? window->m_class : ""),
+                                shapeModeLabel(hints ? hints->shapeMode : eItemShapeMode::NONE), escapeJSONStrings(hintPreset),
+                                drawn && state.lastPresetHint().rejected ? "true" : "false", escapeJSONStrings(drawn ? state.lastResolvedPreset() : ""), hintShape,
+                                lastDrawn);
+        }
+
+        json += "\n  ]\n}\n";
+        return json;
+    }
+
+    if (live.empty())
+        return std::format("hyprglass items: no active subsurface glass items (subsurfaces:enabled={}, hyprglass_item_v1 protocol={})\n",
+                            subsurfacesEnabled ? "on" : "off", protocolActive ? "active" : "inactive");
+
+    std::string out = "hyprglass items\n";
+    out += std::format("  subsurfaces:enabled: {}   hyprglass_item_v1 protocol: {}\n\n", subsurfacesEnabled ? "on" : "off",
+                        protocolActive ? "active" : "inactive");
+    out += std::format("  {:<30} {:<10} {:<9} {}\n", "window", "monitor", "shape", "preset (requested -> resolved)");
+
+    for (const auto& entry : live) {
+        const auto surface   = entry.surface.lock();
+        const auto hints     = surface ? ItemHints::forSurface(surface.get()) : std::nullopt;
+        const auto shapeMode = hints ? hints->shapeMode : eItemShapeMode::NONE;
+
+        const std::string monitorLabel = entry.state->hasDrawnOnce() ? entry.state->lastMonitorName() : "-";
+
+        out += std::format("  {:<30} {:<10} {:<9} {}\n", windowField(entry.state->window()), monitorLabel, shapeModeLabel(shapeMode),
+                            presetField(*entry.state, hints));
+
+        if (hints && shapeMode == eItemShapeMode::EXPLICIT) {
+            out += std::format("      hint rect: {:.1f},{:.1f} {:.1f}x{:.1f}px  radii {:.1f},{:.1f},{:.1f},{:.1f} (logical px)\n", hints->x,
+                                hints->y, hints->width, hints->height, hints->radii[0], hints->radii[1], hints->radii[2], hints->radii[3]);
+        }
+
+        if (entry.state->hasDrawnOnce()) {
+            const auto& box   = entry.state->lastGlassBox();
+            const auto& radii = entry.state->lastRadii();
+            out += std::format(
+                "      last drawn: box {:.1f},{:.1f} {:.1f}x{:.1f}px  radii {:.1f},{:.1f},{:.1f},{:.1f}  roundingPower {:.2f} (physical px)\n",
+                box.x, box.y, box.w, box.h, radii[0], radii[1], radii[2], radii[3], entry.state->lastRoundingPower());
+        } else {
+            out += "      last drawn: -\n";
+        }
+    }
+
+    return out;
 }
 
 std::string formatStats(eHyprCtlOutputFormat format) {
@@ -333,7 +473,10 @@ void registerHyprCtlCommand(HANDLE handle) {
                 return format == eHyprCtlOutputFormat::FORMAT_JSON ? "{\"ok\": true}\n" : "hyprglass: counters reset\n";
             }
 
-            return "hyprglass: usage: hyprctl hyprglass stats [reset]  (prefix with j/ for JSON, e.g. hyprctl j/hyprglass stats)\n";
+            if (rest == "items")
+                return formatItems(format);
+
+            return "hyprglass: usage: hyprctl hyprglass <stats [reset]|items>  (add -j for JSON, e.g. hyprctl -j hyprglass items)\n";
         },
     });
 }

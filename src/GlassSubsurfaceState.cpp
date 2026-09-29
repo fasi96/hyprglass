@@ -2,10 +2,32 @@
 #include "Diagnostics.hpp"
 #include "GlassDecoration.hpp"
 #include "Globals.hpp"
+#include "ItemHints.hpp"
+#include "SubsurfaceGeometry.hpp"
+#include "WindowGeometry.hpp"
 
 #include <GLES3/gl32.h>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+
+// CSS border-radius overlap rule: if two radii sharing an edge would sum to
+// more than that edge's length, every radius (not just that pair) shrinks by
+// the smallest offending edge's own ratio, keeping all four in proportion.
+static void clampRadiiToBox(std::array<float, 4>& radii, float width, float height) {
+    float      ratio     = 1.0f;
+    const auto shrinkFor = [&](float a, float b, float edge) {
+        if (a + b > edge && a + b > 0.0f)
+            ratio = std::min(ratio, edge / (a + b));
+    };
+    shrinkFor(radii[0], radii[1], width);  // top:    top-left + top-right
+    shrinkFor(radii[1], radii[2], height); // right:  top-right + bottom-right
+    shrinkFor(radii[2], radii[3], width);  // bottom: bottom-right + bottom-left
+    shrinkFor(radii[3], radii[0], height); // left:   bottom-left + top-left
+
+    if (ratio < 1.0f)
+        for (float& r : radii)
+            r *= ratio;
+}
 
 CGlassSubsurfaceState::CGlassSubsurfaceState(WP<CWLSurfaceResource> surface, PHLWINDOWREF window)
     : m_surface(std::move(surface)), m_window(std::move(window)) {
@@ -30,11 +52,30 @@ bool CGlassSubsurfaceState::resolveThemeIsDark() const {
     return true;
 }
 
-std::string CGlassSubsurfaceState::resolvePresetName() const {
+std::string CGlassSubsurfaceState::resolvePresetName(SPresetHintOutcome* hintOutcome) const {
+    if (hintOutcome)
+        *hintOutcome = {};
+
     try {
         const auto& config = g_pGlobalState->config;
 
-        // subsurfaces:preset (highest priority)
+        // Client hint (highest priority): only when it names a preset the
+        // current config actually resolves (built-in or user-defined) — an
+        // unrecognised or empty hint behaves like unset_preset, falling
+        // through to the chain below (protocols/hyprglass-item-v1.xml).
+        if (const auto surface = m_surface.lock()) {
+            if (const auto hints = ItemHints::forSurface(surface.get())) {
+                if (!hints->preset.empty()) {
+                    const bool known = g_pGlobalState->customPresets.contains(hints->preset);
+                    if (hintOutcome)
+                        *hintOutcome = {hints->preset, !known};
+                    if (known)
+                        return hints->preset;
+                }
+            }
+        }
+
+        // subsurfaces:preset
         const auto subsurfacesPreset = readStringConfig(config.subsurfacesPreset);
         if (!subsurfacesPreset.empty())
             return std::string(subsurfacesPreset);
@@ -193,7 +234,8 @@ void CGlassSubsurfaceState::compositeAndRestore(PHLMONITOR monitor, const CBox& 
     Diagnostics::recordSubsurfaceGlassDraw(monitor->m_id);
 
     const bool            isDark = resolveThemeIsDark();
-    const std::string     preset = resolvePresetName();
+    SPresetHintOutcome    presetHint;
+    const std::string     preset = resolvePresetName(&presetHint);
     const SResolveContext ctx    = {preset, isDark, g_pGlobalState->config, g_pGlobalState->customPresets};
 
     float roundingPower = 2.0f;
@@ -212,26 +254,83 @@ void CGlassSubsurfaceState::compositeAndRestore(PHLMONITOR monitor, const CBox& 
     maskInfo.maskMode       = 1; // ext-background-effect-v1 protocol region — always, for subsurface items
     maskInfo.alphaThreshold = 0.0f;
 
-    // Glass shape: a rounded box over the region's own extents (which can be
-    // smaller than the item's full box — see Shaders.hpp's glassBoxOffsetPx),
-    // not the whole item. Radius from plugin:hyprglass:subsurfaces:radius:
-    // -1 (default) = capsule, min(w,h)/2 of that box; >= 0 = the exact logical
-    // px, scaled by monitor scale like every other logical-px size (bevelSize, ...).
-    float     cornerRadius = 0.0f;
-    CBox      glassExtents = transformedRegion.getExtents().intersection(transformBox);
-    if (std::isfinite(glassExtents.x) && std::isfinite(glassExtents.y) && std::isfinite(glassExtents.w) &&
-        std::isfinite(glassExtents.h) && glassExtents.w > 0.0 && glassExtents.h > 0.0) {
-        maskInfo.glassBoxOffsetPx = Vector2D(glassExtents.x - transformBox.x, glassExtents.y - transformBox.y);
-        maskInfo.glassBoxSizePx   = Vector2D(glassExtents.w, glassExtents.h);
+    // Glass shape. NONE (the default, and the fallback for EXPLICIT/INHERIT_WINDOW
+    // when their own geometry can't be resolved — e.g. INHERIT_WINDOW with no
+    // parent window, protocols/hyprglass-item-v1.xml): a rounded box over the
+    // region's own extents (which can be smaller than the item's full box —
+    // see Shaders.hpp's glassBoxOffsetPx), corners from
+    // plugin:hyprglass:subsurfaces:radius (-1 default = capsule, min(w,h)/2 of
+    // that box; >= 0 = the exact logical px, scaled by monitor scale like
+    // every other logical-px size). EXPLICIT and INHERIT_WINDOW override the
+    // box and radii below with the client's own hint.
+    std::array<float, 4> radii{0.0f, 0.0f, 0.0f, 0.0f};
+    bool                 haveGlassBox = false;
 
-        const auto& config           = g_pGlobalState->config;
-        const float configuredRadius = config.subsurfacesRadius ? static_cast<float>(**config.subsurfacesRadius) : -1.0f;
-        cornerRadius = configuredRadius < 0.0f ? static_cast<float>(std::min(glassExtents.w, glassExtents.h)) / 2.0f :
-                                                  configuredRadius * static_cast<float>(monitor->m_scale);
+    const auto surface = m_surface.lock();
+    const auto hints    = surface ? ItemHints::forSurface(surface.get()) : std::nullopt;
+
+    if (hints && hints->shapeMode == eItemShapeMode::EXPLICIT && hints->width > 0.0 && hints->height > 0.0) {
+        // Surface-local logical -> monitor-local pixel: rawBox's own origin
+        // already carries the item's on-monitor placement scaled the same
+        // way (see SubsurfaceGeometry::toPixelBox), so the hint only needs
+        // the same scale applied to its own offset/size.
+        const float scale = static_cast<float>(monitor->m_scale);
+        CBox        hintPixelBox{rawBox.x + hints->x * scale, rawBox.y + hints->y * scale, hints->width * scale, hints->height * scale};
+
+        if (std::isfinite(hintPixelBox.x) && std::isfinite(hintPixelBox.y) && std::isfinite(hintPixelBox.w) && std::isfinite(hintPixelBox.h) &&
+            hintPixelBox.w > 0.0 && hintPixelBox.h > 0.0) {
+            radii = {static_cast<float>(hints->radii[0]) * scale, static_cast<float>(hints->radii[1]) * scale,
+                     static_cast<float>(hints->radii[2]) * scale, static_cast<float>(hints->radii[3]) * scale};
+            // Clamped against the hint's own (pre-transform) box — the pairing
+            // radii[0]+radii[1] means "top edge" in the client's own frame,
+            // regardless of how the monitor transform later permutes the array.
+            clampRadiiToBox(radii, static_cast<float>(hintPixelBox.w), static_cast<float>(hintPixelBox.h));
+
+            CBox transformedHintBox = WindowGeometry::applyMonitorTransform(hintPixelBox, monitor);
+            transformedHintBox.noNegativeSize().round();
+            maskInfo.glassBoxOffsetPx = Vector2D(transformedHintBox.x - transformBox.x, transformedHintBox.y - transformBox.y);
+            maskInfo.glassBoxSizePx   = Vector2D(transformedHintBox.w, transformedHintBox.h);
+            haveGlassBox              = true;
+        }
+    } else if (hints && hints->shapeMode == eItemShapeMode::INHERIT_WINDOW) {
+        if (const auto window = m_window.lock()) {
+            if (const auto windowBox = WindowGeometry::computeWindowBox(window, monitor)) {
+                CBox transformedWindowBox = WindowGeometry::applyMonitorTransform(*windowBox, monitor);
+                maskInfo.glassBoxOffsetPx = Vector2D(transformedWindowBox.x - transformBox.x, transformedWindowBox.y - transformBox.y);
+                maskInfo.glassBoxSizePx   = Vector2D(transformedWindowBox.w, transformedWindowBox.h);
+                haveGlassBox              = true;
+
+                const float windowRadius = window->rounding() * static_cast<float>(monitor->m_scale);
+                radii                    = {windowRadius, windowRadius, windowRadius, windowRadius};
+                roundingPower            = window->roundingPower();
+            }
+        }
+        // else: no parent window (e.g. a layer-shell or standalone surface) —
+        // falls through to the NONE shape below, matching the protocol's
+        // documented "no effect" behaviour for set_inherit_shape.
     }
-    // else: extents degenerate (shouldn't happen — the hook bails on an empty
-    // region before this state is ever touched) — leave the sentinel default,
-    // applyGlassEffect falls back to the whole box with cornerRadius 0.
+
+    if (!haveGlassBox) {
+        CBox glassExtents = transformedRegion.getExtents().intersection(transformBox);
+        if (std::isfinite(glassExtents.x) && std::isfinite(glassExtents.y) && std::isfinite(glassExtents.w) &&
+            std::isfinite(glassExtents.h) && glassExtents.w > 0.0 && glassExtents.h > 0.0) {
+            maskInfo.glassBoxOffsetPx = Vector2D(glassExtents.x - transformBox.x, glassExtents.y - transformBox.y);
+            maskInfo.glassBoxSizePx   = Vector2D(glassExtents.w, glassExtents.h);
+
+            const auto& config           = g_pGlobalState->config;
+            const float configuredRadius = config.subsurfacesRadius ? static_cast<float>(**config.subsurfacesRadius) : -1.0f;
+            const float radius = configuredRadius < 0.0f ? static_cast<float>(std::min(glassExtents.w, glassExtents.h)) / 2.0f :
+                                                             configuredRadius * static_cast<float>(monitor->m_scale);
+            radii = {radius, radius, radius, radius};
+        }
+        // else: extents degenerate (shouldn't happen — the hook bails on an empty
+        // region before this state is ever touched) — leave the sentinel default,
+        // applyGlassEffect falls back to the whole box with every radius 0.
+    }
+
+    // Monitor rotation/mirroring permutes which physical corner each array
+    // slot refers to. A no-op whenever all four radii are equal (NONE, INHERIT_WINDOW).
+    radii = SubsurfaceGeometry::permuteRadiiForMonitorTransform(radii, monitor);
 
     const auto rects = transformedRegion.getRects();
     if (rects.size() <= static_cast<size_t>(GlassRenderer::MAX_REGION_RECTS)) {
@@ -258,6 +357,21 @@ void CGlassSubsurfaceState::compositeAndRestore(PHLMONITOR monitor, const CBox& 
     CBox mutableTransformBox = transformBox;
     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, target,
                                      mutableRawBox, mutableTransformBox, alpha,
-                                     cornerRadius, roundingPower, m_samplePaddingRatio, ctx,
+                                     radii, roundingPower, m_samplePaddingRatio, ctx,
                                      &maskInfo);
+
+    // Record the box/radii/roundingPower/preset already computed above for
+    // `hyprctl hyprglass items` (Diagnostics.cpp) — a negative glassBoxSizePx
+    // is the sentinel meaning "whole box" (see SMaskInfo), same fallback the
+    // shader itself applies.
+    m_lastGlassBox = maskInfo.glassBoxSizePx.x >= 0.0 && maskInfo.glassBoxSizePx.y >= 0.0 ?
+        CBox{transformBox.x + maskInfo.glassBoxOffsetPx.x, transformBox.y + maskInfo.glassBoxOffsetPx.y,
+             maskInfo.glassBoxSizePx.x, maskInfo.glassBoxSizePx.y} :
+        transformBox;
+    m_lastRadii          = radii;
+    m_lastRoundingPower  = roundingPower;
+    m_lastResolvedPreset = preset;
+    m_lastPresetHint     = std::move(presetHint);
+    m_lastMonitorName    = monitor->m_name;
+    m_hasDrawnOnce       = true;
 }

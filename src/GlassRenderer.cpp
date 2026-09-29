@@ -409,7 +409,7 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
 
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
-                       float alpha, float cornerRadius, float roundingPower,
+                       float alpha, const std::array<float, 4>& radii, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
                        const SMaskInfo* mask) {
     if (!sampleFramebuffer || !targetFramebuffer)
@@ -553,7 +553,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         glUniform2f(uniforms.sampleUVScale, 1.0f, 1.0f);
     }
 
-    shader->setUniformFloat(SHADER_RADIUS, cornerRadius);
+    glUniform4f(uniforms.radii, radii[0], radii[1], radii[2], radii[3]);
     shader->setUniformFloat(SHADER_ROUNDING_POWER, safeRoundingPower);
 
     // Subsurface items only: SDF sub-rect within the drawn box (see

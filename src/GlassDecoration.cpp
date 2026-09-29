@@ -457,7 +457,8 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
 
     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, source,
                                      windowBox, transformBox, glassAlpha,
-                                     cornerRadius, roundingPower, m_samplePaddingRatio, ctx);
+                                     std::array<float, 4>{cornerRadius, cornerRadius, cornerRadius, cornerRadius},
+                                     roundingPower, m_samplePaddingRatio, ctx);
 }
 
 eDecorationType CGlassDecoration::getDecorationType() {

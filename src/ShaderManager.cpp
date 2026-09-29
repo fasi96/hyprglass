@@ -62,6 +62,7 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.specularAngle       = glGetUniformLocation(program, "specularAngle");
     glassUniforms.invFullSize         = glGetUniformLocation(program, "invFullSize");
     glassUniforms.invRoundingPower    = glGetUniformLocation(program, "invRoundingPower");
+    glassUniforms.radii               = glGetUniformLocation(program, "radii");
     glassUniforms.maskTex             = glGetUniformLocation(program, "maskTex");
     glassUniforms.useMask             = glGetUniformLocation(program, "useMask");
     glassUniforms.maskUVOffset        = glGetUniformLocation(program, "maskUVOffset");

@@ -523,6 +523,7 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha, EM
     // in a single pass: glass behind, surface on top, using the temp FBO alpha.
     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, target,
                                      rawBox, transformBox, alpha,
-                                     cornerRadius, roundingPower, m_samplePaddingRatio, ctx,
+                                     std::array<float, 4>{cornerRadius, cornerRadius, cornerRadius, cornerRadius},
+                                     roundingPower, m_samplePaddingRatio, ctx,
                                      &maskInfo);
 }
