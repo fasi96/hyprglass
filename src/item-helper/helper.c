@@ -28,6 +28,7 @@ struct item_object {
     struct wl_resource* resource;
     struct wl_resource* surface; // borrowed; NULL once the surface has died
     struct wl_listener  surface_destroy_listener;
+    int                 listening; // surface_destroy_listener is linked into the surface's destroy signal
     int                 inert;
 
     struct hyprglass_item_state pending;
@@ -172,6 +173,7 @@ static void handle_surface_destroy(struct wl_listener* listener, void* data) {
     // The item object itself stays around, inert, per hyprglass_item_v1's own
     // description — only the surface association is dropped.
     struct wl_resource* surface = item->surface;
+    item->listening             = 0; // libwayland unlinks listeners as it emits a destroy signal
     item->inert                 = 1;
     item->surface               = NULL;
 
@@ -182,21 +184,19 @@ static void handle_surface_destroy(struct wl_listener* listener, void* data) {
 static void item_resource_destroy(struct wl_resource* resource) {
     struct item_object* item = wl_resource_get_user_data(resource);
 
+    // Tracked apart from inert: stop() makes items inert while their surfaces
+    // live on, and a listener left linked past free() would make the surface's
+    // later destroy run handle_surface_destroy on freed memory.
+    if (item->listening) {
+        wl_list_remove(&item->surface_destroy_listener.link);
+        item->listening = 0;
+    }
+
     // Only notify if this item was still the surface's active one — a surface
     // destroy already fired this (and cleared item->surface) for an item that
-    // outlived its surface. The same condition also tells apart whether
-    // surface_destroy_listener is actually still linked into the surface's
-    // destroy_signal (registered in manager_handle_get_item under this exact
-    // condition): if the surface already died first, that list (and the
-    // surface resource owning it) is gone, so touching the listener's link
-    // here would itself be a use-after-free — leave it alone in that case.
-    // Otherwise, it must be unlinked before item is freed below, or the
-    // surface's later destroy would run handle_surface_destroy on freed memory.
-    if (!item->inert && item->surface) {
-        wl_list_remove(&item->surface_destroy_listener.link);
-        if (g_on_destroyed)
-            g_on_destroyed(item->surface, g_callback_userdata);
-    }
+    // outlived its surface.
+    if (!item->inert && item->surface && g_on_destroyed)
+        g_on_destroyed(item->surface, g_callback_userdata);
 
     wl_list_remove(&item->link);
     free(item);
@@ -248,6 +248,7 @@ static void manager_handle_get_item(struct wl_client* client, struct wl_resource
     if (!item->inert) {
         item->surface_destroy_listener.notify = handle_surface_destroy;
         wl_resource_add_destroy_listener(surface_resource, &item->surface_destroy_listener);
+        item->listening = 1;
 
         if (g_on_created)
             g_on_created(surface_resource, g_callback_userdata);
@@ -335,7 +336,16 @@ static void api_stop(void) {
     }
 
     struct item_object* item;
-    wl_list_for_each(item, &g_items, link) { item->inert = 1; }
+    // An inert item no longer needs to hear about its surface, and leaving the
+    // listener linked would outlive the item if the client releases it first.
+    wl_list_for_each(item, &g_items, link) {
+        if (item->listening) {
+            wl_list_remove(&item->surface_destroy_listener.link);
+            item->listening = 0;
+        }
+        item->inert   = 1;
+        item->surface = NULL;
+    }
 
     wl_global_remove(g_active_global);
 
