@@ -19,6 +19,18 @@ hyprpm add https://github.com/hyprnux/hyprglass
 hyprpm enable hyprglass
 ```
 
+On a Hyprland release, hyprpm installs the hyprglass release made for it. On hyprland-git, it builds `main`, which follows Hyprland's development branch.
+
+If your distribution's Hyprland isn't recognized as a release and the build fails, use the stable branch of your Hyprland version:
+
+```bash
+hyprpm remove https://github.com/hyprnux/hyprglass
+hyprpm add https://github.com/hyprnux/hyprglass origin/hyprland-0.56
+hyprpm enable hyprglass
+```
+
+hyprpm then stays on that branch through `hyprpm update`. Repeat this with the new branch when you upgrade Hyprland to its next minor version.
+
 ### Pre-built release
 
 Grab `hyprglass.so` from [Releases](https://github.com/hyprnux/hyprglass/releases/latest). Each release targets a specific Hyprland API version — check the release notes to confirm it matches yours.
@@ -36,6 +48,8 @@ plugin = /path/to/hyprglass.so
 ### Manual build
 
 ```bash
+git clone https://github.com/hyprnux/hyprglass && cd hyprglass
+git checkout hyprland-0.56   # branch of your Hyprland version; stay on main for hyprland-git
 make
 hyprctl plugin load $(pwd)/hyprglass.so
 ```
@@ -482,6 +496,13 @@ As a last resort, setting `HYPRGLASS_SKIP_VERSION_CHECK=1` downgrades the failur
 ### Build fails inside Hyprland's own headers ("cannot convert 'PHLLS' … to 'bool' … explicit conversion function was not considered")
 
 This happens when building against Hyprland **0.55.4 headers** with a hyprutils **newer than 0.13.1**: hyprutils made its smart-pointer `operator bool` explicit after 0.55.4 was released, and 0.55.4's headers still rely on the old implicit behavior. Every Hyprland plugin fails identically on such a system — it is not a hyprglass bug. Until the next Hyprland release, either downgrade/pin hyprutils to 0.13.1, or run hyprland-git (fixed upstream) and rebuild the plugin against its headers.
+
+## Contributing
+
+| Branch | Builds against | Target it for |
+|---|---|---|
+| `hyprland-X.Y` (newest, e.g. `hyprland-0.56`) | the Hyprland X.Y release | fixes and features; releases are cut from it |
+| `main` | hyprland-git | hyprland-git compatibility only; every change of the stable branch is merged into it automatically, or through a `forward-merge/hyprland-X.Y` pull request when it conflicts or breaks the hyprland-git build |
 
 ## License
 
