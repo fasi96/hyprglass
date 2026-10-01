@@ -27,6 +27,12 @@ struct SMonitorCounters {
     uint64_t layerCacheHits         = 0;
     uint64_t layerCacheMisses       = 0;
     uint64_t layerDeferredResamples = 0;
+    // Subsurface item glass — same meaning as the layer counters above, but
+    // for CGlassSubsurfaceState (CRenderPass::add hook).
+    uint64_t subsurfaceGlassDraws        = 0;
+    uint64_t subsurfaceCacheHits         = 0;
+    uint64_t subsurfaceCacheMisses       = 0;
+    uint64_t subsurfaceDeferredResamples = 0;
     uint64_t blurPasses             = 0;
     double   sampledMegapixels      = 0.0;
     double   glassMegapixels        = 0.0;
@@ -46,6 +52,11 @@ void recordLayerGlassDraw(MONITORID monitor);
 void recordLayerCacheHit(MONITORID monitor);
 void recordLayerCacheMiss(MONITORID monitor);
 void recordLayerDeferredResample(MONITORID monitor);
+// Subsurface item glass — see CGlassSubsurfaceState.
+void recordSubsurfaceGlassDraw(MONITORID monitor);
+void recordSubsurfaceCacheHit(MONITORID monitor);
+void recordSubsurfaceCacheMiss(MONITORID monitor);
+void recordSubsurfaceDeferredResample(MONITORID monitor);
 void recordBlurPasses(MONITORID monitor, uint64_t passes);
 // GL state found different from what Hyprland's tracker reports; rate-limited notification.
 void recordStateDesync(const char* what);
@@ -80,6 +91,8 @@ enum class EStage : int {
     ApplyGlassEffect,
     LayerSample,
     LayerComposite,
+    SubsurfaceSample,
+    SubsurfaceComposite,
     Count,
 };
 

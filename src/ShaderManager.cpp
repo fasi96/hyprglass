@@ -73,6 +73,7 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.parallax            = glGetUniformLocation(program, "parallax");
     glassUniforms.oilA                = glGetUniformLocation(program, "oilA");
     glassUniforms.oilB                = glGetUniformLocation(program, "oilB");
+    glassUniforms.radii               = glGetUniformLocation(program, "radii");
     glassUniforms.maskTex             = glGetUniformLocation(program, "maskTex");
     glassUniforms.useMask             = glGetUniformLocation(program, "useMask");
     glassUniforms.maskUVOffset        = glGetUniformLocation(program, "maskUVOffset");
@@ -85,6 +86,8 @@ bool CShaderManager::compileGlassShader() {
         glassUniforms.regionRects = glGetUniformLocation(program, "regionRects");
     glassUniforms.sampleUVOffset      = glGetUniformLocation(program, "sampleUVOffset");
     glassUniforms.sampleUVScale       = glGetUniformLocation(program, "sampleUVScale");
+    glassUniforms.glassBoxOffsetPx    = glGetUniformLocation(program, "glassBoxOffsetPx");
+    glassUniforms.glassBoxSizePx      = glGetUniformLocation(program, "glassBoxSizePx");
 
     return true;
 }

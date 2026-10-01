@@ -157,6 +157,15 @@ inline constexpr auto LAYERS_MASK_MODE                  = "plugin:hyprglass:laye
 inline constexpr auto LAYERS_NAMESPACE_MASK_MODES       = "plugin:hyprglass:layers:namespace_mask_modes";
 inline constexpr auto LAYERS_MANAGE_BLUR                = "plugin:hyprglass:layers:manage_blur";
 
+// Subsurface item glass support (see GlassSubsurfaceState).
+// Preset resolution: subsurfaces:preset -> layers:preset (if set) -> window default preset.
+inline constexpr auto SUBSURFACES_ENABLED = "plugin:hyprglass:subsurfaces:enabled";
+inline constexpr auto SUBSURFACES_PRESET  = "plugin:hyprglass:subsurfaces:preset";
+// Glass shape radius, logical px. -1 (default) = capsule: min(w,h)/2 of the
+// glass box (the item's blur-region extents, not necessarily its whole
+// surface box). >= 0 = that exact radius, scaled by monitor scale.
+inline constexpr auto SUBSURFACES_RADIUS  = "plugin:hyprglass:subsurfaces:radius";
+
 // Window background cache kill switch; commit-driven invalidation (single
 // global bool, no per-namespace concept for windows) and its throttle —
 // mirrors the layers:live_resample/live_resample_fps keys above.
@@ -387,6 +396,10 @@ struct SPluginConfig {
     StringConfigPtr       layersMaskMode;
     StringConfigPtr       layersNamespaceMaskModes;
     Hyprlang::INT* const* layersManageBlur               = nullptr;
+
+    Hyprlang::INT* const*   subsurfacesEnabled = nullptr;
+    StringConfigPtr         subsurfacesPreset;
+    Hyprlang::FLOAT* const* subsurfacesRadius  = nullptr;
 
     Hyprlang::INT* const* windowsBackgroundCache  = nullptr;
     Hyprlang::INT* const* windowsLiveResample     = nullptr;

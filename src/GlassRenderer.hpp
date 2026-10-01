@@ -77,6 +77,14 @@ struct SMaskInfo {
     // PROTOCOL_REGION layers only; see GlassLayerSurface.cpp.
     Vector2D sampleUVOffset{0.0, 0.0};
     Vector2D sampleUVScale{1.0, 1.0};
+
+    // Subsurface items only: the rounded-box SDF's own sub-rect within the
+    // drawn box, box-local pixels (see Shaders.hpp's glassBoxOffsetPx/SizePx).
+    // Sentinel (negative size) means "use the full drawn box", applyGlassEffect's
+    // old, unconditional behaviour — every other caller (windows, alpha-mask
+    // layers) leaves this at the default and sees no change at all.
+    Vector2D glassBoxOffsetPx{0.0, 0.0};
+    Vector2D glassBoxSizePx{-1.0, -1.0};
 };
 
 // Affine map from source-framebuffer pixels into the sample framebuffer.
@@ -116,9 +124,14 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
 // When mask is non-null (layers only), the shader composites the surface content
 // over the glass effect in a single pass. When mask is null (windows), the shader
 // outputs the glass effect alone.
+//
+// radii: per-corner radius (top-left, top-right, bottom-right, bottom-left).
+// Windows and layers pass the same value four times — see CGlassDecoration::
+// renderPass() and CGlassLayerSurface::compositeAndRestore(); only subsurface
+// item glass (CGlassSubsurfaceState) ever passes unequal corners.
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
-                       float alpha, float cornerRadius, float roundingPower,
+                       float alpha, const std::array<float, 4>& radii, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
                        const SMaskInfo* mask = nullptr);
 

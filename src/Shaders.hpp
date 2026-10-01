@@ -33,7 +33,7 @@ precision highp float;
 uniform sampler2D tex;
 uniform vec2 fullSize;
 uniform vec2 invFullSize;      // = 1.0 / fullSize, hoisted out of the per-pixel divisions below
-uniform float radius;
+uniform vec4 radii;            // per-corner radius: top-left, top-right, bottom-right, bottom-left
 uniform vec2 uvPadding;
 
 uniform float refractionStrength;
@@ -93,6 +93,15 @@ uniform int maskMode;          // 0 = alpha threshold, 1 = protocol region
 uniform int regionRectCount;   // 0..16
 uniform vec4 regionRects[16];  // box-local pixels: xy = offset from box top-left, zw = size
 
+// Subsurface item glass only: the rounded-box SDF (getCornerSDF below) is
+// evaluated over this sub-rect of the drawn box instead of the full box —
+// the item's blur-region extents, which can be smaller than its own surface
+// box (e.g. a capsule pill inside a wider hit-test area). Box-local pixels,
+// same space as regionRects. Windows and alpha-mask layers pass offset (0,0)
+// and size == fullSize, so the SDF is unchanged from the old whole-box math.
+uniform vec2 glassBoxOffsetPx;
+uniform vec2 glassBoxSizePx;
+
 // Maps this fragment's own box UV into the sample texture's normalized space
 // before uvPadding is applied. Identity (offset 0, scale 1) unless the sample
 // texture covers a smaller area than this box — PROTOCOL_REGION layers only,
@@ -135,30 +144,56 @@ float lpNorm(vec2 v, float p, float invP) {
     return pow(pow(abs(v.x), p) + pow(abs(v.y), p), invP);
 }
 
-float getRoundedBoxSDF(vec2 uv, float r) {
-    vec2 p = (uv - 0.5) * fullSize;
-    vec2 halfSize = fullSize * 0.5;
+// Quadrant lookup for the per-corner radius. p is measured from the box
+// center (as getRoundedBoxSDF/getBevelSDF compute it below): negative y is
+// the top half (v_texcoord grows downward — see the specular highlight's
+// 1.0 - uv.y), negative x is the left half. cornerRadii is (top-left,
+// top-right, bottom-right, bottom-left).
+float pickCornerRadius(vec2 p, vec4 cornerRadii) {
+    float top    = p.x < 0.0 ? cornerRadii.x : cornerRadii.y;
+    float bottom = p.x < 0.0 ? cornerRadii.w : cornerRadii.z;
+    return p.y < 0.0 ? top : bottom;
+}
+
+// posPx/boxSizePx: pixel-space position relative to (and size of) the box the
+// SDF is measured against — the glass box (see glassBoxOffsetPx/SizePx above),
+// not necessarily the fragment's full drawn box.
+float getRoundedBoxSDF(vec2 posPx, vec2 boxSizePx, vec4 cornerRadii) {
+    vec2 p = posPx - boxSizePx * 0.5;
+    vec2 halfSize = boxSizePx * 0.5;
+    float r = pickCornerRadius(p, cornerRadii);
     float clampedR = min(r, min(halfSize.x, halfSize.y));
     vec2 q = abs(p) - halfSize + clampedR;
     return min(max(q.x, q.y), 0.0) + lpNorm(max(q, 0.0), roundingPower, invRoundingPower) - clampedR;
 }
 
 float getCornerSDF(vec2 uv) {
-    return getRoundedBoxSDF(uv, radius);
+    vec2 boxLocalPx = uv * fullSize - glassBoxOffsetPx;
+    return getRoundedBoxSDF(boxLocalPx, glassBoxSizePx, radii);
 }
 
-// Edge distance for the bevel, crease-free. Contour lines are rounded
-// rectangles that match the window outline exactly at the edge (depth 0) and
-// get rounder going inward: at depth d the box is inset by d and its corner
-// radius is r + d. Radius only ever grows, so the top and side bevels always
-// blend round the corners like a polished edge (no 45-degree seam, no flat
-// spot). Per pixel the depth is a closed-form quadratic in the corner zone:
+// Edge distance for the bevel, crease-free. Inside the window, getCornerSDF is
+// max(q.x, q.y) - r: the distance to whichever edge is nearer. That has a crease
+// along each corner's 45-degree diagonal, so the edge refraction (and anything
+// else driven by edgeProximity) shows a straight seam in all four corners.
+//
+// Here the contour lines are rounded rectangles that match the window outline
+// exactly at the edge (depth 0) and get rounder going inward: at depth d the box
+// is inset by d and its corner radius is r + d. The radius only grows, so the
+// top and side bevels always blend round the corner. Per pixel the depth is a
+// closed-form quadratic in the corner zone:
 //   |a + 2d| = r + d,  a = |p| - halfSize + r   =>   7d^2 + (4(ax+ay) - 2r) d + |a|^2 - r^2 = 0
-// and the plain straight-edge distance elsewhere.
-float getBevelSDF(vec2 uv, float k) {
-    vec2  H = fullSize * 0.5;
-    float r = min(radius, min(H.x, H.y));
-    vec2  a = abs((uv - 0.5) * fullSize) - H + r;
+// and the plain straight-edge distance elsewhere. Past depth (h - r) / 2, with h
+// the smaller half-size, the radius would outgrow the inset box: from there the
+// contours are stadiums, i.e. the plain distance to the box rounded by h (so a
+// capsule gets its exact distance everywhere).
+float getBevelSDF(vec2 uv) {
+    vec2  H = glassBoxSizePx * 0.5;
+    float h = min(H.x, H.y);
+    vec2  signedP = uv * fullSize - glassBoxOffsetPx - H;
+    float r = min(pickCornerRadius(signedP, radii), h);
+    vec2  p = abs(signedP);
+    vec2  a = p - H + r;
     float d = min(r - a.x, r - a.y);                      // straight-edge depth
     float B = 4.0 * (a.x + a.y) - 2.0 * r;
     float C = dot(a, a) - r * r;
@@ -168,7 +203,8 @@ float getBevelSDF(vec2 uv, float k) {
         if (a.x + 2.0 * dc >= 0.0 && a.y + 2.0 * dc >= 0.0)
             d = dc;                                        // in a corner zone: the rounded contour
     }
-    return -d;
+    vec2 s = p - H + h;
+    return -max(d, h - length(max(s, 0.0)) - min(max(s.x, s.y), 0.0));
 }
 
 // Normal the light reads. The window's own corners are tight, so their normal
@@ -278,14 +314,29 @@ void main() {
         }
     }
 
-    float cornerSdf = getCornerSDF(uv);
+    float cornerSdf    = getCornerSDF(uv);
+    float cornerAlpha  = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
 
-    if (cornerSdf > 0.0) {
-        discard;
+    if (maskMode == 1) {
+        // Subsurface items: the glass box (glassBoxOffsetPx/SizePx) can be
+        // smaller than the item's own drawn box/region — e.g. a capsule glass
+        // shape inside a rectangular blur region. Outside it, fall back to the
+        // plain surface pixel instead of dropping it (a hard discard here would
+        // silently delete client content, like an icon, that simply isn't under
+        // the glass). cornerAlpha fades smoothly across the boundary (the same
+        // curve already used for glassA below), so this is an antialiased
+        // "glass * coverage, surface over" blend, not a hard cutover — the
+        // actual blend happens in the hasMask composite at the bottom of main().
+        if (cornerAlpha < 0.001) {
+            fragColor = surfacePixel;
+            return;
+        }
+    } else {
+        // Windows, and alpha-mask layers: no surface pixel to fall back to
+        // outside the glass shape, so this is exactly the old hard-edged cutoff.
+        if (cornerSdf > 0.0) discard;
+        if (cornerAlpha < 0.001) discard;
     }
-
-    float cornerAlpha = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
-    if (cornerAlpha < 0.001) discard;
 
     float minDim = min(fullSize.x, fullSize.y);
     float bezelWidthPx = edgeThickness * minDim;
@@ -294,12 +345,15 @@ void main() {
     // EDGE PROXIMITY + DIRECTION
     // edgeProximity: 1.0 at boundary, exponential decay inward
     // inwardDir: pixel-space direction toward center (smooth everywhere)
+    // Clamped to 1.0: cornerSdf can be positive here (maskMode==1's glass box
+    // can be smaller than fullSize, so fragments just outside it still reach
+    // this code with cornerAlpha > 0.001), and exp() of a positive value would
+    // otherwise overshoot every effect that scales off edgeProximity.
     // ========================================
-    // bevel distance: crease-free round the corners
-    float bevelK   = 0.0;   // unused by the crease-free bevel; kept for the helper signatures
-    float bevelSdf = getBevelSDF(uv, bevelK);
-    float edgeProximity = exp(bevelSdf * invBezelWidthPx);
-
+    // crease-free bevel distance, so the edge has no seam along the corner diagonals;
+    // it assumes circular corners, so a superellipse outline keeps the exact SDF
+    float bevelSdf = roundingPower == 2.0 ? getBevelSDF(uv) : cornerSdf;
+    float edgeProximity = min(exp(bevelSdf * invBezelWidthPx), 1.0);
     vec2 inwardDir = refractionDir(uv);
     vec2 posPx = (uv - 0.5) * fullSize; // pixel-space position for the edge-flow direction below
 
@@ -340,7 +394,7 @@ void main() {
         // one direction per window (from its centre), like sunlight: a per-pixel
         // direction fans out into a pointed cone when the light sits near an edge
         vec2  toL = lightPos - (boxPos + 0.5 * fullSize);
-        vec2  n   = lightNormal(uv, max(radius, lightA.z * 6.0));
+        vec2  n   = lightNormal(uv, max(pickCornerRadius((uv - 0.5) * fullSize, radii), lightA.z * 6.0));
         vec2  L   = length(toL) > 1.0 ? normalize(toL) : vec2(0.0, -1.0);
         float ndl = dot(n, L);
         float rim = exp(bevelSdf / max(lightA.z, 1.0));       // 1 at the edge, fading inward

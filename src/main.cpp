@@ -5,7 +5,11 @@
 #include "GlassLayerPassElement.hpp"
 #include "GlassLayerSurface.hpp"
 #include "GlassRenderer.hpp"
+#include "GlassSubsurfaceCompositeElement.hpp"
+#include "GlassSubsurfacePassElement.hpp"
+#include "GlassSubsurfaceState.hpp"
 #include "Globals.hpp"
+#include "ItemHints.hpp"
 #include "PluginConfig.hpp"
 #include "RenderGuards.hpp"
 #include "GlassLight.hpp"
@@ -13,6 +17,7 @@
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
+#include "SubsurfaceGeometry.hpp"
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/Workspace.hpp>
@@ -23,6 +28,8 @@
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/pass/Pass.hpp>
+#include <hyprland/src/render/pass/SurfacePassElement.hpp>
 #include <hyprland/src/helpers/Color.hpp>
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
@@ -46,6 +53,15 @@ static void clearLayerGlassOnClose(PHLLS layerSurface) {
 
     if (auto monitor = layerSurface->m_monitor.lock())
         g_pHyprRenderer->damageMonitor(monitor);
+}
+
+static void clearSubsurfaceFramebufferForMonitor(PHLMONITOR monitor) {
+    if (!g_pGlobalState || !monitor)
+        return;
+
+    // The monitor is gone, so its temp FBO can never be reused: drop it
+    // instead of keeping a dead entry around indefinitely.
+    g_pGlobalState->subsurfaceTempFramebuffers.erase(monitor->m_id);
 }
 
 static void onNewWindow(PHLWINDOW window) {
@@ -225,6 +241,11 @@ static void onRenderStage(eRenderStage stage) {
             g_pGlobalState->dedupe.reset();
             if (const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock())
                 Diagnostics::recordFrame(monitor->m_id);
+            // Subsurface item glass has no per-surface destroy signal to hang
+            // an eager erase off (unlike layers/windows), so dead entries are
+            // swept here instead — once per monitor frame, far cheaper than
+            // the CRenderPass::add hook this state is populated from.
+            std::erase_if(g_pGlobalState->subsurfaceGlass, [](const auto& pair) { return pair.first.expired(); });
             break;
         case RENDER_PRE_WINDOWS: g_pGlobalState->dedupe.resetEpoch(); break;
         case RENDER_PRE_WINDOW: beginWindowRender(); break;
@@ -464,6 +485,166 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
     ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
 }
 
+// ── Subsurface item glass support ────────────────────────────────────────────
+//
+// A glass "item" (toolbar capsule, round button, ...) is a wl_subsurface of an
+// app window that declares ext-background-effect-v1 on itself. Unlike layer
+// glass (hooked at CHyprRenderer::renderLayer, one call per whole layer
+// surface) an item is just one more CSurfacePassElement in a window's own
+// surface tree (Renderer.cpp's breadthfirst walk over
+// pWindow->wlSurface()->resource()), so the natural interception point is one
+// level lower: Render::CRenderPass::add(UP<IPassElement>&&), which every pass
+// element — surfaces, borders, shadows, our own layer elements — funnels
+// through on its way into the pass.
+
+using renderPassAddFn = void (*)(Render::CRenderPass*, UP<IPassElement>&&);
+
+static void callOriginalRenderPassAdd(Render::CRenderPass* pass, UP<IPassElement>&& el) {
+    ((renderPassAddFn)g_pGlobalState->renderPassAddHook->m_original)(pass, std::move(el));
+}
+
+// Same enable/disable resolution as the window's own glass (tags, global
+// enabled, opaque-skip, ...) plus the subsurfaces:enabled kill switch — see
+// CGlassDecoration::isGlassEnabled().
+static bool subsurfaceGlassEnabledForWindow(const PHLWINDOW& window) {
+    const auto& config = g_pGlobalState->config;
+    if (!(config.subsurfacesEnabled && **config.subsurfacesEnabled))
+        return false;
+    if (!window)
+        return false;
+
+    auto* deco = glassDecorationFor(window);
+    return deco && deco->isGlassEnabled();
+}
+
+static void hkRenderPassAdd(Render::CRenderPass* pass, UP<IPassElement>&& el) {
+    // Hot path: every pass element of every kind (windows, layers, popups,
+    // rects, cursors, snapshots...), on every monitor, every frame, funnels
+    // through here — whether or not item glass is used anywhere. The
+    // non-matching fast path must stay a couple of cheap branches, not a
+    // cast chain or a fromResource/map lookup. Cheapest first: a plain enum
+    // compare, before anything that calls into other systems.
+    if (!el || el->type() != EK_SURFACE) {
+        callOriginalRenderPassAdd(pass, std::move(el));
+        return;
+    }
+
+    // Feature off (never enabled, or turned off this session): skip every
+    // further check below, including the per-window glassDecorationFor()
+    // lookup and any per-surface state map access — no item was ever
+    // registered, so there is nothing further to look up.
+    const auto& config = g_pGlobalState->config;
+    if (!(config.subsurfacesEnabled && **config.subsurfacesEnabled)) {
+        callOriginalRenderPassAdd(pass, std::move(el));
+        return;
+    }
+
+    // Snapshots (closing-window/layer fade captures) start transparent/black —
+    // sampling one as a background would bake that into the snapshot, same
+    // reasoning as hkRenderLayer. A foreign render (overview/screencopy replay,
+    // or one with its own render modifier already set) must not create or
+    // touch any of our per-surface state either.
+    if (g_pHyprRenderer->m_bRenderingSnapshot || RenderGuards::isForeignRender()) {
+        callOriginalRenderPassAdd(pass, std::move(el));
+        return;
+    }
+
+    // CSurfacePassElement is the only IPassElement whose type() returns
+    // EK_SURFACE (checked above), so this cast can't fail.
+    auto*       surfaceEl = static_cast<CSurfacePassElement*>(el.get());
+    const auto& data      = surfaceEl->m_data;
+    const auto  monitor   = data.pMonitor.lock();
+
+    // Only a window's own non-main, non-popup child surfaces are candidates —
+    // the window's main surface is the window itself (glassed by
+    // CGlassDecoration already), and popups (menus, tooltips) are not items.
+    if (data.mainSurface || data.popup || !data.pWindow || !data.surface || !monitor ||
+        !subsurfaceGlassEnabledForWindow(data.pWindow)) {
+        callOriginalRenderPassAdd(pass, std::move(el));
+        return;
+    }
+
+    const auto wlSurface = Desktop::View::CWLSurface::fromResource(data.surface);
+    if (!wlSurface || !wlSurface->m_hasBackgroundEffect || wlSurface->m_blurRegion.empty()) {
+        // No longer eligible (effect object gone, or region cleared): drop any
+        // existing state instead of leaving it to outlive the surface itself.
+        g_pGlobalState->subsurfaceGlass.erase(WP<CWLSurfaceResource>(data.surface));
+        callOriginalRenderPassAdd(pass, std::move(el));
+        return;
+    }
+
+    // getTexBox() is exactly the box IPassElement::boundingBox() expects
+    // (monitor-local logical, see SurfacePassElement.cpp) — capture it now,
+    // before el's ownership moves into the pass below, and derive every other
+    // coordinate family from it (see SubsurfaceGeometry.hpp).
+    const CBox itemLogicalBox = surfaceEl->getTexBox();
+    const auto pixelBox       = SubsurfaceGeometry::toPixelBox(itemLogicalBox, monitor);
+    if (!pixelBox) {
+        callOriginalRenderPassAdd(pass, std::move(el));
+        return;
+    }
+
+    const CBox rawBox       = *pixelBox;
+    const CBox transformBox = SubsurfaceGeometry::toTransformBox(rawBox, monitor);
+    CRegion    region       = SubsurfaceGeometry::transformedItemBlurRegion(data.surface, rawBox, monitor);
+    if (region.empty()) {
+        // A background effect was declared but nothing is left to glass this
+        // frame (e.g. an explicit empty region, or clipped fully outside the
+        // subsurface's own committed size) — render the item exactly as
+        // Hyprland would, and drop any existing state rather than let it
+        // outlive the region that produced it.
+        g_pGlobalState->subsurfaceGlass.erase(WP<CWLSurfaceResource>(data.surface));
+        callOriginalRenderPassAdd(pass, std::move(el));
+        return;
+    }
+
+    // Lazy per-surface state, keyed by a weak ref (see Globals.hpp) — pruned
+    // once per monitor frame in onRenderStage(RENDER_BEGIN), not here: this
+    // hook fires for every pass element in the frame and can't afford a map
+    // sweep on each call.
+    auto&                   states = g_pGlobalState->subsurfaceGlass;
+    WP<CWLSurfaceResource>  key    = data.surface;
+    auto                    it     = states.find(key);
+    if (it == states.end())
+        it = states.emplace(key, std::make_shared<CGlassSubsurfaceState>(key, data.pWindow)).first;
+
+    const float alpha = std::clamp(data.alpha * data.fadeAlpha, 0.0f, 1.0f);
+
+    // Pre-surface: sample+blur background, redirect currentFB → temp FBO.
+    CGlassSubsurfacePassElement::SData preData{it->second, itemLogicalBox, transformBox, data.pMonitor, alpha};
+    callOriginalRenderPassAdd(pass, makeUnique<CGlassSubsurfacePassElement>(preData));
+
+    // The surface element itself: Hyprland's own draw() call renders it into
+    // the temp FBO the pre-surface element just redirected currentFB to.
+    callOriginalRenderPassAdd(pass, std::move(el));
+
+    // Post-surface: restore currentFB, composite glass masked by the protocol
+    // region with the item's own foreground (from the temp FBO) on top.
+    CGlassSubsurfaceCompositeElement::SData postData{it->second, itemLogicalBox, rawBox, transformBox, std::move(region), data.pMonitor, alpha};
+    callOriginalRenderPassAdd(pass, makeUnique<CGlassSubsurfaceCompositeElement>(postData));
+}
+
+// Only warn about the missing CRenderPass::add hook once config is actually
+// loaded and the feature is turned on — called after every config reload so
+// a user who enables subsurfaces later still gets told.
+static void notifySubsurfaceHookFailure() {
+    if (!g_pGlobalState || g_pGlobalState->renderPassAddHook || g_pGlobalState->subsurfaceHookFailureNotified)
+        return;
+
+    const auto& config = g_pGlobalState->config;
+    if (!(config.subsurfacesEnabled && **config.subsurfacesEnabled))
+        return;
+
+    g_pGlobalState->subsurfaceHookFailureNotified = true;
+    HyprlandAPI::addNotificationV2(PHANDLE, {
+        {"text", std::string(g_pGlobalState->renderPassAddSymbolFound ?
+            "[hyprglass] Could not hook CRenderPass::add (symbol found, hook failed — possibly already hooked by another plugin) — subsurface item glass disabled" :
+            "[hyprglass] Could not hook CRenderPass::add (symbol not found) — subsurface item glass disabled")},
+        {"time", (uint64_t)5000},
+        {"color", CHyprColor{1.0, 0.8, 0.2, 1.0}},
+    });
+}
+
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
 }
@@ -593,6 +774,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     g_pGlobalState->listeners.push_back(Event::bus()->m_events.layer.closed.listen([&](PHLLS layerSurface) { clearLayerGlassOnClose(layerSurface); }));
 
+    g_pGlobalState->listeners.push_back(Event::bus()->m_events.monitor.destroyMon.listen(
+        [&](PHLMONITOR monitor) { clearSubsurfaceFramebufferForMonitor(monitor); }));
+
     // Z-order / visibility changes invalidate layer glass caches on the affected monitor only.
     // Per-monitor to avoid triggering re-samples on idle monitors (feedback loop).
     auto bumpWindowMonitor = [&](PHLWINDOW w) {
@@ -657,6 +841,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         validateConfig();
         // config values are only valid here: reloadConfig() is asynchronous
         refreshSurfaceObserver();
+        notifySubsurfaceHookFailure();
     }));
 
 
@@ -706,6 +891,31 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         });
     }
 
+    // Hook CRenderPass::add for subsurface item glass support.
+    // findFunctionsByName() greps the MANGLED symbol table (see
+    // HyprlandAPI::findFunctionsByName, PluginAPI.cpp) — Itanium mangling has no
+    // "::", so "CRenderPass::add" would never match there (only in the
+    // demangled copy it separately keeps for the match's .demangled field).
+    // "CRenderPass3add" is the mangled nested-name substring
+    // (_ZN6Render11CRenderPass3addE...) and is confirmed unique in the running
+    // binary; the demangled double-check below is what actually verifies it.
+    bool renderPassAddFound = false;
+    auto renderPassAddMatches = HyprlandAPI::findFunctionsByName(PHANDLE, "CRenderPass3add");
+    for (const auto& match : renderPassAddMatches) {
+        if (match.demangled.contains("CRenderPass::add") && match.demangled.contains("IPassElement")) {
+            renderPassAddFound = true;
+            g_pGlobalState->renderPassAddHook = HyprlandAPI::createFunctionHook(PHANDLE, match.address, (void*)hkRenderPassAdd);
+            if (g_pGlobalState->renderPassAddHook && !g_pGlobalState->renderPassAddHook->hook()) {
+                HyprlandAPI::removeFunctionHook(PHANDLE, g_pGlobalState->renderPassAddHook);
+                g_pGlobalState->renderPassAddHook = nullptr;
+            }
+            break;
+        }
+    }
+
+    // the failure notification waits for the config: see notifySubsurfaceHookFailure()
+    g_pGlobalState->renderPassAddSymbolFound = renderPassAddFound;
+
     HyprlandAPI::reloadConfig();
     initConfigPointers(PHANDLE, g_pGlobalState->config);
     commitPendingPresets();
@@ -713,6 +923,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     commitPendingLayers();
     validateConfig();
     refreshSurfaceObserver();
+    notifySubsurfaceHookFailure();
+
+    // Last: a PLUGIN_INIT that throws is unloaded without PLUGIN_EXIT, which
+    // would leave the persistent helper calling back into this library.
+    ItemHints::init();
 
     // Glass light listeners
     g_pGlobalState->listeners.push_back(Event::bus()->m_events.input.mouse.move.listen(
@@ -763,6 +978,10 @@ APICALL EXPORT void PLUGIN_EXIT() {
     if (!g_pGlobalState)
         return;
 
+    // Withdraws the global and clears every callback into this plugin before
+    // anything else runs, since the helper library itself is never unloaded.
+    ItemHints::exit();
+
     g_pGlobalState->listeners.clear();
     BackgroundDamageObserver::setEnabled(false);
     Diagnostics::unregisterHyprCtlCommand(PHANDLE);
@@ -779,6 +998,8 @@ APICALL EXPORT void PLUGIN_EXIT() {
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerCompositeElement");
+    g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassSubsurfacePassElement");
+    g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassSubsurfaceCompositeElement");
 
     Diagnostics::shutdown();
 
@@ -793,7 +1014,13 @@ APICALL EXPORT void PLUGIN_EXIT() {
         g_pGlobalState->renderLayerHook = nullptr;
     }
 
+    if (g_pGlobalState->renderPassAddHook) {
+        HyprlandAPI::removeFunctionHook(PHANDLE, g_pGlobalState->renderPassAddHook);
+        g_pGlobalState->renderPassAddHook = nullptr;
+    }
+
     g_pGlobalState->layerSurfaces.clear();
+    g_pGlobalState->subsurfaceGlass.clear();
     g_pGlobalState->shaderManager.destroy();
     g_pGlobalState.reset();
 }

@@ -109,6 +109,11 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_MODES, Config::STRING{});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::LAYERS_MANAGE_BLUR, Config::INTEGER{1});
 
+    // Subsurface item glass
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::SUBSURFACES_ENABLED, Config::INTEGER{0});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::SUBSURFACES_PRESET, Config::STRING{});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::SUBSURFACES_RADIUS, Config::FLOAT{-1.0});
+
     // Window background cache
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::WINDOWS_BACKGROUND_CACHE, Config::INTEGER{1});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::WINDOWS_LIVE_RESAMPLE, Config::INTEGER{1});
@@ -328,6 +333,10 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.layersMaskMode           = getStringPtr(handle, ConfigKeys::LAYERS_MASK_MODE);
     config.layersNamespaceMaskModes = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_MODES);
     config.layersManageBlur         = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LAYERS_MANAGE_BLUR);
+
+    config.subsurfacesEnabled = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::SUBSURFACES_ENABLED);
+    config.subsurfacesPreset  = getStringPtr(handle, ConfigKeys::SUBSURFACES_PRESET);
+    config.subsurfacesRadius  = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::SUBSURFACES_RADIUS);
 
     config.windowsBackgroundCache = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::WINDOWS_BACKGROUND_CACHE);
     config.windowsLiveResample    = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::WINDOWS_LIVE_RESAMPLE);

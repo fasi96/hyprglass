@@ -88,6 +88,18 @@ hyprpm add https://github.com/hyprnux/hyprglass
 hyprpm enable hyprglass
 ```
 
+On a Hyprland release, hyprpm installs the hyprglass release made for it. On hyprland-git, it builds `main`, which follows Hyprland's development branch.
+
+If your distribution's Hyprland isn't recognized as a release and the build fails, use the stable branch of your Hyprland version:
+
+```bash
+hyprpm remove https://github.com/hyprnux/hyprglass
+hyprpm add https://github.com/hyprnux/hyprglass origin/hyprland-0.56
+hyprpm enable hyprglass
+```
+
+hyprpm then stays on that branch through `hyprpm update`. Repeat this with the new branch when you upgrade Hyprland to its next minor version.
+
 ### Pre-built release
 
 Grab `hyprglass.so` from [Releases](https://github.com/hyprnux/hyprglass/releases/latest). Each release targets a specific Hyprland API version — check the release notes to confirm it matches yours.
@@ -105,6 +117,8 @@ plugin = /path/to/hyprglass.so
 ### Manual build
 
 ```bash
+git clone https://github.com/hyprnux/hyprglass && cd hyprglass
+git checkout hyprland-0.56   # branch of your Hyprland version; stay on main for hyprland-git
 make
 hyprctl plugin load $(pwd)/hyprglass.so
 ```
@@ -326,6 +340,43 @@ hg.layer("debug-panel", { exclude = true })
 
 > Layer support hooks into Hyprland's internal render pipeline. This is version-sensitive and may break across Hyprland updates.
 
+### Subsurface item glass
+
+Glass a `wl_subsurface` of a window (a toolbar capsule, a round button) instead of the whole window: the client attaches `ext-background-effect-v1` to that subsurface, and glass is drawn exactly in its requested region.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `subsurfaces:enabled` | bool | `false` (`0` in .conf) | Enable glass on subsurfaces that request it |
+| `subsurfaces:preset` | string | `""` | Preset override for all items. Falls back to `layers:preset`, then `default_preset` |
+| `subsurfaces:radius` | float | `-1` | Corner radius in logical px. `-1` (default) = capsule (fully rounded) |
+
+**Lua:**
+```lua
+hg.config({ subsurfaces = { enabled = true, preset = "subtle", radius = 12 } })
+```
+
+**Legacy .conf:**
+```ini
+plugin {
+    hyprglass {
+        subsurfaces {
+            enabled = 1
+            preset = subtle
+            radius = 12
+        }
+    }
+}
+```
+
+A client app can hint its own preset and shape per item via the `hyprglass_item_v1` Wayland protocol (`protocols/hyprglass-item-v1.xml`), overriding the config above for that one item:
+
+- `set_preset` / `unset_preset` — request a named preset for this item, or clear the hint
+- `set_shape` — clip the effect to an explicit rect with up to four independent corner radii, in the item's own local coordinates
+- `set_inherit_shape` — shape the item like its parent window instead: same corners, same rounding curve
+- `unset_shape` — clear the shape hint
+
+An item that sends no hints, or a preset name the compositor doesn't recognize, gets `subsurfaces:radius`'s capsule/rounded-rect shape over its blur region and the preset chain above.
+
 ### Window background cache
 
 Windows cache their sampled, blurred background and only re-sample it when something actually changed behind the window (it moved/resized, the window behind it changed, or the cache was just allocated) — the same idea as the layer `live_resample` cache above, always on.
@@ -336,7 +387,7 @@ Windows cache their sampled, blurred background and only re-sample it when somet
 | `windows:live_resample` | bool | `true` (`1` in .conf) | Re-render window glass when content behind it changes (e.g. a playing video, another window). GPU cost scales with background activity; static scenes stay free |
 | `windows:live_resample_fps` | int | `30` | Max background-dirty marks per second for windows. `0` = uncapped |
 
-> `hyprctl hyprglass stats` reports `win_hit`/`win_miss`/`win_defer`/`win_disc` (and `layer_hit`/`layer_miss`/`layer_defer` for layers) per monitor to watch the cache in action.
+> `hyprctl hyprglass stats` reports `win_hit`/`win_miss`/`win_defer`/`win_disc` (and `layer_hit`/`layer_miss`/`layer_defer` for layers, `sub_hit`/`sub_miss`/`sub_defer` for subsurface items) per monitor to watch the cache in action.
 
 ### Per-window overrides
 
@@ -467,16 +518,33 @@ hyprctl plugin unload /path/to/hyprglass.so
 ```bash
 hyprctl hyprglass stats          # per-monitor counters and (if enabled) stage timers
 hyprctl hyprglass stats reset    # zero every counter and accumulated timer
-hyprctl j/hyprglass stats        # same, as JSON
+hyprctl -j hyprglass stats       # same, as JSON
 ```
 
 ```
 hyprglass stats
   stage timers: off (plugin:hyprglass:debug:timers = 0)
 
-  monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  blur_pass  sampled_mpx  glass_mpx
-  eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3       5520        41.30      18.77
-  eDP-1          per frame: 0.47 win draws, 0.22 layer draws, 0.77 blur passes, 0.006 sampled mpx, 0.003 glass mpx
+  monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  sub_draws  sub_hit  sub_miss  sub_defer  blur_pass  sampled_mpx  glass_mpx
+  eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3        410      380        22          8       5520        41.30      18.77
+  eDP-1          per frame: 0.47 win draws, 0.22 layer draws, 0.06 sub draws, 0.77 blur passes, 0.006 sampled mpx, 0.003 glass mpx
+```
+
+`hyprctl hyprglass items` lists every live subsurface glass item (`hyprglass_item_v1` protocol), its resolved preset and the box/radii it last drew with:
+
+```bash
+hyprctl hyprglass items
+hyprctl -j hyprglass items       # same, as JSON
+```
+
+```
+hyprglass items
+  subsurfaces:enabled: on   hyprglass_item_v1 protocol: active
+
+  window                         monitor    shape     preset (requested -> resolved)
+  0x55f2a1b2c3d4 (kitty)         eDP-1      explicit  hx-frosted-menu (unknown) -> default
+      hint rect: 12.0,8.0 240.0x32.0px  radii 8.0,8.0,8.0,8.0 (logical px)
+      last drawn: box 620.0,140.0 480.0x64.0px  radii 16.0,16.0,16.0,16.0  roundingPower 2.00 (physical px)
 ```
 
 ## Notes
@@ -497,6 +565,13 @@ As a last resort, setting `HYPRGLASS_SKIP_VERSION_CHECK=1` downgrades the failur
 ### Build fails inside Hyprland's own headers ("cannot convert 'PHLLS' … to 'bool' … explicit conversion function was not considered")
 
 This happens when building against Hyprland **0.55.4 headers** with a hyprutils **newer than 0.13.1**: hyprutils made its smart-pointer `operator bool` explicit after 0.55.4 was released, and 0.55.4's headers still rely on the old implicit behavior. Every Hyprland plugin fails identically on such a system — it is not a hyprglass bug. Until the next Hyprland release, either downgrade/pin hyprutils to 0.13.1, or run hyprland-git (fixed upstream) and rebuild the plugin against its headers.
+
+## Contributing
+
+| Branch | Builds against | Target it for |
+|---|---|---|
+| `hyprland-X.Y` (newest, e.g. `hyprland-0.56`) | the Hyprland X.Y release | fixes and features; releases are cut from it |
+| `main` | hyprland-git | hyprland-git compatibility only; every change of the stable branch is merged into it automatically, or through a `forward-merge/hyprland-X.Y` pull request when it conflicts or breaks the hyprland-git build |
 
 ## License
 

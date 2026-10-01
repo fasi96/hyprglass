@@ -37,6 +37,7 @@ struct SGlassUniforms {
     GLint specularAngle = -1;
     GLint invFullSize = -1;
     GLint invRoundingPower = -1;
+    GLint radii = -1; // per-corner radius: top-left, top-right, bottom-right, bottom-left
 
 
     GLint lightPos = -1;
@@ -62,6 +63,11 @@ struct SGlassUniforms {
     GLint regionRects = -1;
     GLint sampleUVOffset = -1;
     GLint sampleUVScale = -1;
+
+    // Subsurface item glass only: glass-box sub-rect the SDF is measured
+    // against, in box-local pixels (see Shaders.hpp).
+    GLint glassBoxOffsetPx = -1;
+    GLint glassBoxSizePx = -1;
 };
 
 struct SBlurUniforms {
