@@ -181,6 +181,21 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
     }
 }
 
+
+// A monitor-local pixel point moved into the same space the shader works in.
+//
+// boxPos is fed from transformBox (GlassRenderer.cpp: glUniform2f(uniforms.boxPos,
+// transformedBox.x, ...)), so anything compared against it has to be transformed
+// the same way. lightPos and glowLocal were not, which is invisible on an output
+// with transform 0 -- windowBox and transformBox are identical there -- and puts
+// the click ripple and the lit rim in the wrong place entirely on a rotated one.
+static Vector2D glassTransformedPoint(const Vector2D& monitorLocalPx, PHLMONITOR monitor) {
+    CBox b = {monitorLocalPx.x, monitorLocalPx.y, 1, 1};
+    b.transform(Math::wlTransformToHyprutils(Math::invertTransform(monitor->m_transform)),
+                monitor->m_transformedSize.x, monitor->m_transformedSize.y);
+    return {b.x, b.y};
+}
+
 PHLWINDOW CGlassDecoration::getOwner() {
     return m_window.lock();
 }
@@ -267,14 +282,16 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
             const double px   = f(cfg.parallaxStrength) * monitor->m_scale;
             lf.parallax = {-std::clamp(rel.x, -1.0, 1.0) * px, -std::clamp(rel.y, -1.0, 1.0) * px};
         }
-        lf.lightPos = (light - monitor->m_position) * monitor->m_scale;
+        lf.lightPos = glassTransformedPoint((light - monitor->m_position) * monitor->m_scale, monitor);
 
         lf.glow = -1.0f;
         if (GlassLight::glowOn() && g_pGlobalState->glowWindow.lock() == window) {
             const double p = (now - g_pGlobalState->glowStart) / GlassLight::glowDuration();
             if (p >= 0.0 && p < 1.0) {
                 lf.glow      = static_cast<float>(p);
-                lf.glowLocal = (g_pGlobalState->glowPoint - monitor->m_position) * monitor->m_scale - Vector2D(windowBox.x, windowBox.y);
+                // transformBox, not windowBox: the point above is now in transformed space
+                lf.glowLocal = glassTransformedPoint((g_pGlobalState->glowPoint - monitor->m_position) * monitor->m_scale, monitor)
+                               - Vector2D(transformBox.x, transformBox.y);
             }
         }
     }
