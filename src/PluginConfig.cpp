@@ -88,7 +88,7 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_INACTIVE, Config::FLOAT{1.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_FPS, Config::FLOAT{30.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_AMOUNT, Config::FLOAT{0.0f});
-    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RADIUS, Config::FLOAT{60.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RADIUS, Config::FLOAT{33.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_FORCE, Config::FLOAT{1.25f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_SWIRL, Config::FLOAT{8.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_FADE, Config::FLOAT{0.9f});
