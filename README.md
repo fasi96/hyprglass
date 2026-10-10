@@ -55,7 +55,7 @@ All global-only, set with `hl.plugin.hyprglass.config({ ... })` like the options
 | `liquid_refraction`, `liquid_color`, `liquid_ripple`, `liquid_glints` | `2.6`, `0.7`, `1.0`, `1.5` | Lens strength, rainbow split, ripples from fast flow, sharp highlights |
 | `liquid_steps`, `liquid_cell` | `20`, `6` | Cost: pressure solver steps per frame, simulation cell size px |
 
-Liquid touch runs a small fluid simulation per window, only while that window is being stirred; once the liquid settles the simulation is freed and the window stops redrawing. It needs half-float render targets (any GLES 3.2 GPU with `EXT_color_buffer_half_float`); without them it turns itself off. The look follows "Viscous Liquid - Cursor FX" by sabosugi on CodePen.
+Liquid touch runs a small fluid simulation per window, only while that window is being stirred; once the liquid settles the simulation is freed and the window stops redrawing. It needs half-float render targets (any GLES 3.2 GPU with `EXT_color_buffer_half_float`); without them it turns itself off. Liquid touch is adapted from ["Viscous Liquid - Cursor FX"](https://codepen.io/sabosugi/pen/01a125aa-40e8-70ca-b198-550dc149d263) by [Sabo Sugi](https://codepen.io/sabosugi) and Pavel Dobryakov's [WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation), both MIT-licensed; their notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Example:
 

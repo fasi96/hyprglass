@@ -496,6 +496,7 @@ void main() {
     // LIQUID TOUCH — the pointer stirs a thin clear liquid on the glass: where
     // it's thick it bulges into a lens, the flow drags the view behind along
     // (and it flows back), and its curved parts split colour and catch glints.
+    // After Sabo Sugi's "Viscous Liquid - Cursor FX" (MIT, THIRD_PARTY_NOTICES.md).
     // ========================================
     vec3  liqN      = vec3(0.0, 0.0, 1.0);
     vec2  liqUV     = vec2(0.0);
@@ -669,6 +670,8 @@ void main() {
 )GLSL"},
 
     // ---- Liquid touch: fluid simulation passes (LiquidSim.cpp) ----
+    // Adapted from Sabo Sugi's "Viscous Liquid - Cursor FX" and Pavel Dobryakov's
+    // WebGL Fluid Simulation, both MIT: see THIRD_PARTY_NOTICES.md.
     {"liquid_splat.frag", R"GLSL(
 #version 300 es
 precision highp float;

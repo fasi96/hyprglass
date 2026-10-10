@@ -7,8 +7,9 @@
 // A window's textures exist only while it is being stirred and are freed once
 // its liquid settles, so an idle desktop costs nothing.
 //
-// Stable fluids (Stam) as in Dobryakov's WebGL fluid; the look follows
-// "Viscous Liquid - Cursor FX" by sabosugi (CodePen).
+// Adapted from "Viscous Liquid - Cursor FX" by Sabo Sugi
+// (https://codepen.io/sabosugi/pen/01a125aa-40e8-70ca-b198-550dc149d263) and
+// Pavel Dobryakov's WebGL Fluid Simulation, both MIT: see THIRD_PARTY_NOTICES.md.
 
 #include <GLES3/gl32.h>
 #include <hyprland/src/render/Shader.hpp>
