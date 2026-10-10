@@ -51,6 +51,15 @@ struct SGlassUniforms {
     GLint parallax = -1;
     GLint oilA = -1;
     GLint oilB = -1;
+
+    // Liquid touch (windows only)
+    GLint liqOn = -1;
+    GLint liqDye = -1;
+    GLint liqVel = -1;
+    GLint liqDisp = -1;
+    GLint liqTexel = -1;
+    GLint liqA = -1;
+    GLint liqGlints = -1;
     
     // Layers only: temp FBO surface mask for content-aware glass
     GLint maskTex = -1;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GlassLayerSurface.hpp"
+#include "LiquidSim.hpp"
 #include "PluginConfig.hpp"
 #include "ShaderManager.hpp"
 
@@ -116,7 +117,18 @@ struct SGlobalState {
         Vector2D boxPos;               // window top-left, monitor-local px
         Vector2D parallax;             // view shift behind the glass, px
         float    oilShare = 0.0f;      // 1 focused, oil_inactive elsewhere
+        bool     liquidOn = false;     // the liquid textures below are live for this draw
+        GLuint   liquidDye = 0, liquidVel = 0, liquidDisp = 0;
+        Vector2D liquidTexel;          // one sim cell, box UV
     } lightFrame;
+
+    // Liquid touch: the glass window under the pointer (the one it stirs), the
+    // simulation programs (compiled on the first stir) and a latch for GPUs
+    // that cannot render to half-float textures.
+    PHLWINDOWREF    liquidWindow;
+    Vector2D        liquidMouse;      // pointer at the last light tick
+    CLiquidPrograms liquidPrograms;
+    bool            liquidUnsupported = false;
     // Render-order fingerprint: a per-monitor running hash folded from every
     // glass-eligible window's identity/geometry/alpha in z-order, compared frame
     // to frame to catch stacking/membership changes (e.g. a window closing behind

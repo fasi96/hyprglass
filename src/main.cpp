@@ -658,6 +658,25 @@ static void damageAllGlass() {
     }
 }
 
+// The glass window under the pointer: visible on screen, the focused one if
+// several overlap. Click glow and liquid touch both act on it.
+static PHLWINDOW glassWindowAt(const Vector2D& cursor) {
+    const PHLWINDOW focused = Desktop::focusState()->window();
+    PHLWINDOW       hit;
+    for (const auto& decoration : g_pGlobalState->decorations) {
+        auto* deco = decoration.get();
+        auto  w    = deco ? deco->getOwner() : nullptr;
+        if (!w || !w->m_isMapped || w->isHidden() || !w->m_workspace || !w->m_workspace->m_visible)
+            continue;
+        if (!w->getWindowMainSurfaceBox().containsPoint(cursor))
+            continue;
+        hit = w;
+        if (w == focused)
+            break;
+    }
+    return hit;
+}
+
 static void armLightTimer() {
     auto& st = *g_pGlobalState;
     if (!st.lightFast && st.lightTimer) {
@@ -697,6 +716,25 @@ static void lightTick(SP<CEventLoopTimer> self, void*) {
     const bool cursorLight = (GlassLight::lightOn() && f(st.config.lightCursor) > 0.001f) || GlassLight::parallaxOn();
     if (cursorLight && (st.cursorMoved || st.smoothCursor != mouse))
         redrawAll = true, active = true;
+
+    // liquid touch: a moving pointer stirs the glass window under it; a stirred
+    // window redraws at full rate until its liquid settles, then stops
+    // a real change of position: a resting pointer never keeps the liquid awake
+    const bool pointerMoved = mouse != st.liquidMouse;
+    st.liquidMouse          = mouse;
+    if (GlassLight::liquidOn() && pointerMoved) {
+        const PHLWINDOW w = glassWindowAt(mouse);
+        auto*           deco = w ? glassDecorationFor(w) : nullptr;
+        st.liquidWindow = deco && deco->isGlassEnabled() ? w : PHLWINDOW{};
+        if (st.liquidWindow)
+            deco->liquidWake(now);
+    }
+    for (const auto& decoration : st.decorations) {
+        if (auto* deco = decoration.get(); deco && deco->liquidBusy(now)) {
+            deco->damageEntire();
+            active = true;
+        }
+    }
     st.cursorMoved = false;
     if (GlassLight::glowOn()) {
         if (auto w = st.glowWindow.lock(); w && now - st.glowStart < GlassLight::glowDuration() + 0.05) {
@@ -941,19 +979,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         [](const auto& ev, auto&) {
             if (!g_pGlobalState || ev.state != WL_POINTER_BUTTON_STATE_PRESSED || !GlassLight::glowOn())
                 return;
-            // the glass window under the pointer (the focused one if several overlap)
-            const Vector2D   cursor  = g_pInputManager->getMouseCoordsInternal();
-            const PHLWINDOW  focused = Desktop::focusState()->window();
-            PHLWINDOW        hit;
-            for (const auto& decoration : g_pGlobalState->decorations) {
-                auto* deco = decoration.get();
-                auto  w    = deco ? deco->getOwner() : nullptr;
-                if (!w || !w->getWindowMainSurfaceBox().containsPoint(cursor))
-                    continue;
-                hit = w;
-                if (w == focused)
-                    break;
-            }
+            const Vector2D  cursor = g_pInputManager->getMouseCoordsInternal();
+            const PHLWINDOW hit    = glassWindowAt(cursor);
             if (!hit)
                 return;
             g_pGlobalState->glowWindow = hit;
@@ -1021,6 +1048,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
 
     g_pGlobalState->layerSurfaces.clear();
     g_pGlobalState->subsurfaceGlass.clear();
+    g_pGlobalState->liquidPrograms.destroy();
     g_pGlobalState->shaderManager.destroy();
     g_pGlobalState.reset();
 }

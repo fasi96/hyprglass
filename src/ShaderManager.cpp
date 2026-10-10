@@ -73,6 +73,13 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.parallax            = glGetUniformLocation(program, "parallax");
     glassUniforms.oilA                = glGetUniformLocation(program, "oilA");
     glassUniforms.oilB                = glGetUniformLocation(program, "oilB");
+    glassUniforms.liqOn               = glGetUniformLocation(program, "liqOn");
+    glassUniforms.liqDye              = glGetUniformLocation(program, "liqDye");
+    glassUniforms.liqVel              = glGetUniformLocation(program, "liqVel");
+    glassUniforms.liqDisp             = glGetUniformLocation(program, "liqDisp");
+    glassUniforms.liqTexel            = glGetUniformLocation(program, "liqTexel");
+    glassUniforms.liqA                = glGetUniformLocation(program, "liqA");
+    glassUniforms.liqGlints           = glGetUniformLocation(program, "liqGlints");
     glassUniforms.radii               = glGetUniformLocation(program, "radii");
     glassUniforms.maskTex             = glGetUniformLocation(program, "maskTex");
     glassUniforms.useMask             = glGetUniformLocation(program, "useMask");

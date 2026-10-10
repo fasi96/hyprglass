@@ -84,6 +84,15 @@ uniform vec3  parallax;     // xy = view shift px (cursor tilt), z = extra towar
 uniform vec4  oilA;         // amount (0 = off), time (s, pre-scaled by speed), swirl size px, colourfulness
 uniform vec4  oilB;         // warp px, unused x3
 
+// Liquid touch (LiquidSim.hpp): this window's fluid simulation, in box UV.
+uniform int       liqOn;      // 1 while this window's liquid is live
+uniform sampler2D liqDye;     // x = liquid thickness 0..1
+uniform sampler2D liqVel;     // xy = flow, sim cells per second
+uniform sampler2D liqDisp;    // xy = how far the view behind is dragged, box UV
+uniform vec2      liqTexel;   // one sim cell, box UV
+uniform vec4      liqA;       // amount (scales the whole look), refraction, colour split, ripple
+uniform float     liqGlints;
+
 uniform sampler2D maskTex;
 uniform int useMask;
 uniform vec2 maskUVOffset;
@@ -238,6 +247,14 @@ float oilFbm(vec2 p) {
     float v = 0.0, a = 0.5;
     for (int i = 0; i < 3; i++) { v += a * oilNoise(p); p = p * 2.03 + vec2(17.0, 9.0); a *= 0.5; }
     return v;
+}
+
+// Liquid surface height, from the simulation only: thick liquid forms a smooth
+// lens and fast flow raises ripples on it.
+float liquidHeight(vec2 uv) {
+    float dye   = texture(liqDye, uv).x;
+    float speed = length(texture(liqVel, uv).xy);
+    return dye * 0.6 + speed * liqA.w * 0.004 * smoothstep(0.0, 0.3, dye);
 }
 
 // ============================================================================
@@ -475,12 +492,34 @@ void main() {
     // Same shift for every channel, so no colour fringing across the pane.
     vec2 parallaxUV = parallax.xy * (1.0 + parallax.z * edgeProximity) / fullSize * materialize;
 
-    vec3 color;
-    vec2 uvR = uv + offsetR + domeUV + parallaxUV + oilUV;
-    vec2 uvG = uv + offsetG + domeUV + parallaxUV + oilUV;
-    vec2 uvB = uv + offsetB + domeUV + parallaxUV + oilUV;
+    // ========================================
+    // LIQUID TOUCH — the pointer stirs a thin clear liquid on the glass: where
+    // it's thick it bulges into a lens, the flow drags the view behind along
+    // (and it flows back), and its curved parts split colour and catch glints.
+    // ========================================
+    vec3  liqN      = vec3(0.0, 0.0, 1.0);
+    vec2  liqUV     = vec2(0.0);
+    vec2  liqSpread = vec2(0.0);
+    float liqWet    = 0.0;
+    if (liqOn == 1) {
+        vec2 tx   = vec2(liqTexel.x, 0.0);
+        vec2 ty   = vec2(0.0, liqTexel.y);
+        vec2 grad = vec2(liquidHeight(uv + tx) - liquidHeight(uv - tx),
+                         liquidHeight(uv + ty) - liquidHeight(uv - ty)) * 0.5;
+        liqN      = normalize(vec3(-grad * 6.0, 1.0));
+        liqWet    = smoothstep(0.0, 0.35, texture(liqDye, uv).x);
+        vec2 disp = texture(liqDisp, uv).xy;
+        vec2 lens = liqN.xy * minDim * invFullSize;   // same strength in px on any window shape
+        liqUV     = (disp - lens * liqA.y * 0.05) * liqA.x;
+        liqSpread = (lens * 0.035 + disp * 0.04) * liqA.z * liqA.x;
+    }
 
-    if (chromaticAberration > 0.001 && edgeProximity > 0.01) {
+    vec3 color;
+    vec2 uvR = uv + offsetR + domeUV + parallaxUV + oilUV + liqUV - liqSpread * 0.5;
+    vec2 uvG = uv + offsetG + domeUV + parallaxUV + oilUV + liqUV;
+    vec2 uvB = uv + offsetB + domeUV + parallaxUV + oilUV + liqUV + liqSpread * 0.5;
+
+    if ((chromaticAberration > 0.001 && edgeProximity > 0.01) || liqOn == 1) {
         color.r = sampleBlurred(uvR).r;
         color.g = sampleBlurred(uvG).g;
         color.b = sampleBlurred(uvB).b;
@@ -542,6 +581,15 @@ void main() {
         color = mix(color, bevelLight, ring * facing * bevelStrength);
         if (bevelShadow > 0.001)
             color = mix(color, vec3(0.0), ring * (1.0 - facing) * bevelShadow);
+    }
+
+    // liquid light: faint shading toward the glass light, sharp glints only
+    if (liqOn == 1) {
+        vec2  toL = lightPos - (boxPos + 0.5 * fullSize);
+        vec2  L2  = length(toL) > 1.0 ? normalize(toL) : vec2(0.0, -1.0);
+        color    *= max(1.0 + dot(liqN.xy, L2) * 0.15 * liqWet * liqA.x, 0.0);
+        vec3  H   = normalize(normalize(vec3(L2, 1.2)) + vec3(0.0, 0.0, 1.0));
+        color    += vec3(pow(max(dot(liqN, H), 0.0), 120.0) * liqGlints * liqA.x);
     }
 
     // ========================================
@@ -617,6 +665,183 @@ void main() {
         // because the GL_ONE source factor adds raw color regardless of alpha.
         fragColor = vec4(color * glassA, glassA);
     }
+}
+)GLSL"},
+
+    // ---- Liquid touch: fluid simulation passes (LiquidSim.cpp) ----
+    {"liquid_splat.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+uniform vec4 seg;     // stroke from xy to zw, box UV
+uniform vec4 push;    // xy = velocity (cells/s), z = amount, w = 0 velocity / 1 liquid
+uniform vec2 shape;   // x = box aspect, y = brush radius (share of box height)
+void main() {
+    vec2 p = v_texcoord, a = seg.xy, b = seg.zw;
+    p.x *= shape.x; a.x *= shape.x; b.x *= shape.x;
+    vec2  pa = p - a, ba = b - a;
+    float h  = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+    float d  = length(pa - ba * h);
+    float f  = exp(-d * d / (shape.y * shape.y));
+    vec4 base = texture(tex, v_texcoord);
+    if (push.w < 0.5)
+        fragColor = vec4(base.xy + push.xy * f * push.z, 0.0, 1.0);
+    else
+        fragColor = vec4(min(base.x + f * push.z, 1.0), 0.0, 0.0, 1.0);
+}
+)GLSL"},
+
+    {"liquid_advect.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+uniform sampler2D uVel;
+uniform float dt;
+uniform float dissipation;
+uniform float velScale;
+void main() {
+    vec2 coord = v_texcoord - dt * velScale * texture(uVel, v_texcoord).xy * texel;
+    fragColor = texture(tex, coord) / (1.0 + dissipation * dt);
+}
+)GLSL"},
+
+    {"liquid_displace.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+// tex = displacement: the view behind is sampled at uv + D
+uniform sampler2D uVel;
+uniform sampler2D uDye;
+uniform float dt;
+uniform float decay;
+uniform float drag;
+void main() {
+    float wet  = smoothstep(0.0, 0.2, texture(uDye, v_texcoord).x);
+    vec2  step = dt * drag * wet * texture(uVel, v_texcoord).xy * texel;
+    vec2  d    = texture(tex, v_texcoord - step).xy - step;
+    d *= mix(decay * decay * decay, decay, wet);   // dry glass lets go faster
+    fragColor = vec4(d, 0.0, 1.0);
+}
+)GLSL"},
+
+    {"liquid_divergence.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+void main() {
+    vec2 vL = v_texcoord - vec2(texel.x, 0.0), vR = v_texcoord + vec2(texel.x, 0.0);
+    vec2 vT = v_texcoord + vec2(0.0, texel.y), vB = v_texcoord - vec2(0.0, texel.y);
+    float L = texture(tex, vL).x;
+    float R = texture(tex, vR).x;
+    float T = texture(tex, vT).y;
+    float B = texture(tex, vB).y;
+    vec2  C = texture(tex, v_texcoord).xy;
+    if (vL.x < 0.0) L = -C.x;
+    if (vR.x > 1.0) R = -C.x;
+    if (vT.y > 1.0) T = -C.y;
+    if (vB.y < 0.0) B = -C.y;
+    fragColor = vec4(0.5 * (R - L + T - B), 0.0, 0.0, 1.0);
+}
+)GLSL"},
+
+    {"liquid_curl.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+void main() {
+    float L = texture(tex, v_texcoord - vec2(texel.x, 0.0)).y;
+    float R = texture(tex, v_texcoord + vec2(texel.x, 0.0)).y;
+    float T = texture(tex, v_texcoord + vec2(0.0, texel.y)).x;
+    float B = texture(tex, v_texcoord - vec2(0.0, texel.y)).x;
+    fragColor = vec4(0.5 * (R - L - T + B), 0.0, 0.0, 1.0);
+}
+)GLSL"},
+
+    {"liquid_vorticity.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+uniform sampler2D uCurl;
+uniform float curl;
+uniform float dt;
+void main() {
+    float L = texture(uCurl, v_texcoord - vec2(texel.x, 0.0)).x;
+    float R = texture(uCurl, v_texcoord + vec2(texel.x, 0.0)).x;
+    float T = texture(uCurl, v_texcoord + vec2(0.0, texel.y)).x;
+    float B = texture(uCurl, v_texcoord - vec2(0.0, texel.y)).x;
+    float C = texture(uCurl, v_texcoord).x;
+    vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+    force /= length(force) + 0.0001;
+    force *= curl * C;
+    force.y *= -1.0;
+    vec2 vel = texture(tex, v_texcoord).xy + force * dt;
+    fragColor = vec4(clamp(vel, -1000.0, 1000.0), 0.0, 1.0);
+}
+)GLSL"},
+
+    {"liquid_scale.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+uniform float value;
+void main() {
+    fragColor = value * texture(tex, v_texcoord);
+}
+)GLSL"},
+
+    {"liquid_pressure.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+uniform sampler2D uDiv;
+void main() {
+    float L = texture(tex, v_texcoord - vec2(texel.x, 0.0)).x;
+    float R = texture(tex, v_texcoord + vec2(texel.x, 0.0)).x;
+    float T = texture(tex, v_texcoord + vec2(0.0, texel.y)).x;
+    float B = texture(tex, v_texcoord - vec2(0.0, texel.y)).x;
+    float div = texture(uDiv, v_texcoord).x;
+    fragColor = vec4((L + R + B + T - div) * 0.25, 0.0, 0.0, 1.0);
+}
+)GLSL"},
+
+    {"liquid_gradient.frag", R"GLSL(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+layout(location = 0) out vec4 fragColor;
+uniform sampler2D tex;
+uniform vec2 texel;   // one sim cell
+uniform sampler2D uVel;
+void main() {
+    float L = texture(tex, v_texcoord - vec2(texel.x, 0.0)).x;
+    float R = texture(tex, v_texcoord + vec2(texel.x, 0.0)).x;
+    float T = texture(tex, v_texcoord + vec2(0.0, texel.y)).x;
+    float B = texture(tex, v_texcoord - vec2(0.0, texel.y)).x;
+    fragColor = vec4(texture(uVel, v_texcoord).xy - vec2(R - L, T - B), 0.0, 1.0);
 }
 )GLSL"},
 

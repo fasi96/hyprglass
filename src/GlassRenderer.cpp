@@ -20,6 +20,10 @@ static GLuint fbId(const SP<Render::IFramebuffer>& framebuffer) {
     return dynamic_cast<Render::GL::CGLFramebuffer*>(framebuffer.get())->getFBID();
 }
 
+GLuint framebufferId(const SP<Render::IFramebuffer>& framebuffer) {
+    return fbId(framebuffer);
+}
+
 static void uploadThemeUniforms(const SResolveContext& ctx) {
     const auto& uniforms = g_pGlobalState->shaderManager.glassUniforms;
     const auto& glassShader = g_pGlobalState->shaderManager.glassShader;
@@ -538,6 +542,25 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         glUniform4f(uniforms.oilA, win ? f(c.oilAmount) * lf.oilShare : 0.0f, static_cast<float>(oilT), f(c.oilScale) * sc, f(c.oilColor));
         glUniform4f(uniforms.oilB, f(c.oilWarp) * 8.0f * sc, 0.0f, 0.0f, 0.0f);
         glUniform3f(uniforms.parallax, win ? static_cast<float>(lf.parallax.x) : 0.0f, win ? static_cast<float>(lf.parallax.y) : 0.0f, f(c.parallaxDepth));
+
+        // liquid touch: this window's simulation on units 2-4 (0 = sample, 1 = layer mask)
+        const bool liquid = win && lf.liquidOn;
+        glUniform1i(uniforms.liqOn, liquid ? 1 : 0);
+        glUniform1i(uniforms.liqDye, 2);
+        glUniform1i(uniforms.liqVel, 3);
+        glUniform1i(uniforms.liqDisp, 4);
+        if (liquid) {
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, lf.liquidDye);
+            glActiveTexture(GL_TEXTURE3);
+            glBindTexture(GL_TEXTURE_2D, lf.liquidVel);
+            glActiveTexture(GL_TEXTURE4);
+            glBindTexture(GL_TEXTURE_2D, lf.liquidDisp);
+            glActiveTexture(GL_TEXTURE0);
+            glUniform2f(uniforms.liqTexel, static_cast<float>(lf.liquidTexel.x), static_cast<float>(lf.liquidTexel.y));
+            glUniform4f(uniforms.liqA, f(c.liquidAmount), f(c.liquidRefraction), f(c.liquidColor), f(c.liquidRipple));
+            glUniform1f(uniforms.liqGlints, f(c.liquidGlints));
+        }
     }
 
     glUniform2f(uniforms.uvPadding,

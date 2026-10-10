@@ -106,6 +106,21 @@ inline constexpr auto GLOW_SPREAD          = "plugin:hyprglass:glow_spread";    
 inline constexpr auto GLOW_RING            = "plugin:hyprglass:glow_ring";             // ring width, px
 // Materialize: new windows appear by ramping up their bending, not by fading.
 inline constexpr auto MATERIALIZE_DURATION = "plugin:hyprglass:materialize_duration";  // seconds (0 = off)
+// Liquid touch: the pointer stirs a thin clear liquid on the glass of the window
+// under it; a small fluid simulation runs per window, only while it is stirred.
+inline constexpr auto LIQUID_AMOUNT        = "plugin:hyprglass:liquid_amount";         // 0 = off, 1 = full look
+inline constexpr auto LIQUID_RADIUS        = "plugin:hyprglass:liquid_radius";         // brush radius, px
+inline constexpr auto LIQUID_FORCE         = "plugin:hyprglass:liquid_force";          // how hard the pointer pushes the liquid
+inline constexpr auto LIQUID_SWIRL         = "plugin:hyprglass:liquid_swirl";          // vorticity: how much the flow curls
+inline constexpr auto LIQUID_FADE          = "plugin:hyprglass:liquid_fade";           // how fast the liquid dries up (per second)
+inline constexpr auto LIQUID_DRAG          = "plugin:hyprglass:liquid_drag";           // how far the flow carries the view behind
+inline constexpr auto LIQUID_RETURN        = "plugin:hyprglass:liquid_return";         // how fast the dragged view flows back
+inline constexpr auto LIQUID_REFRACTION    = "plugin:hyprglass:liquid_refraction";     // lens strength where the liquid is thick
+inline constexpr auto LIQUID_COLOR         = "plugin:hyprglass:liquid_color";          // rainbow split on curved liquid (0 = none)
+inline constexpr auto LIQUID_RIPPLE        = "plugin:hyprglass:liquid_ripple";         // ripples raised by fast flow
+inline constexpr auto LIQUID_GLINTS        = "plugin:hyprglass:liquid_glints";         // sharp highlights on the liquid
+inline constexpr auto LIQUID_STEPS         = "plugin:hyprglass:liquid_steps";          // pressure solver steps per frame (cost)
+inline constexpr auto LIQUID_CELL          = "plugin:hyprglass:liquid_cell";           // simulation cell size, px (cost)
 
 // Preset keyword, registered as unscoped because Hyprlang does not dispatch
 // scoped keyword handlers inside the plugin special category.
@@ -376,6 +391,19 @@ struct SPluginConfig {
     Hyprlang::FLOAT* const* oilWarp = nullptr;
     Hyprlang::FLOAT* const* oilInactive = nullptr;
     Hyprlang::FLOAT* const* oilFps = nullptr;
+    Hyprlang::FLOAT* const* liquidAmount = nullptr;
+    Hyprlang::FLOAT* const* liquidRadius = nullptr;
+    Hyprlang::FLOAT* const* liquidForce = nullptr;
+    Hyprlang::FLOAT* const* liquidSwirl = nullptr;
+    Hyprlang::FLOAT* const* liquidFade = nullptr;
+    Hyprlang::FLOAT* const* liquidDrag = nullptr;
+    Hyprlang::FLOAT* const* liquidReturn = nullptr;
+    Hyprlang::FLOAT* const* liquidRefraction = nullptr;
+    Hyprlang::FLOAT* const* liquidColor = nullptr;
+    Hyprlang::FLOAT* const* liquidRipple = nullptr;
+    Hyprlang::FLOAT* const* liquidGlints = nullptr;
+    Hyprlang::FLOAT* const* liquidSteps = nullptr;
+    Hyprlang::FLOAT* const* liquidCell = nullptr;
     StringConfigPtr      defaultTheme;
     StringConfigPtr      defaultPreset;
 

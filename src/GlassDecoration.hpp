@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GlassRenderer.hpp"
+#include "LiquidSim.hpp"
 #include "PluginConfig.hpp"
 
 #include <chrono>
@@ -54,6 +55,11 @@ class CGlassDecoration : public IHyprWindowDecoration {
     [[nodiscard]] bool        isThemeDark() const { return resolveThemeIsDark(); }
     [[nodiscard]] std::string presetName() const { return resolvePresetName(); }
 
+    // Liquid touch: the pointer moved over this window's glass (from the light
+    // timer, outside rendering), and whether its liquid still needs redraws.
+    void               liquidWake(double now);
+    [[nodiscard]] bool liquidBusy(double now) const;
+
     // Weak over the UP Hyprland owns: use .get()/-> only, never .lock().
     WP<CGlassDecoration> m_self;
     double               m_createdAt = 0.0;   // for materialize (GlassLight)
@@ -90,6 +96,14 @@ class CGlassDecoration : public IHyprWindowDecoration {
     bool m_noBlurApplied = false;
 
     float m_lastSelfSample = 0.0f;
+
+    // Liquid touch: the simulation exists only while this window is stirred.
+    UP<CLiquidSim> m_liquid;
+    bool           m_liquidWanted   = false;
+    double         m_liquidLastStir = -1e9;
+    double         m_liquidLastStep = 0.0;
+    Vector2D       m_liquidCursor;   // the pointer as the liquid sees it (eased), global logical
+    void           updateLiquid(PHLMONITOR monitor, const CBox& transformBox, const SP<Render::IFramebuffer>& source);
 
     // Frame serial the last glass element was queued for, and its index in that
     // frame. Hyprland renders a floating window over fullscreen more than once

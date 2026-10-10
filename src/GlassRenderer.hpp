@@ -101,6 +101,9 @@ struct SSampleMap {
 
 [[nodiscard]] SSampleMap sampleMapFor(const CBox& box, int downscale);
 
+// GL name of a framebuffer, for passes that bind it directly.
+[[nodiscard]] GLuint framebufferId(const SP<Render::IFramebuffer>& framebuffer);
+
 // True when every pixel sampleBackground() would read for `box` lies inside
 // `damage`. The only coverage predicate. `box` is in post-transform framebuffer
 // pixels like `damage`, not the logical space boundingBox() pads in.

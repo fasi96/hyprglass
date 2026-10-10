@@ -87,6 +87,19 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_WARP, Config::FLOAT{0.6f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_INACTIVE, Config::FLOAT{1.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::OIL_FPS, Config::FLOAT{30.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_AMOUNT, Config::FLOAT{0.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RADIUS, Config::FLOAT{60.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_FORCE, Config::FLOAT{1.25f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_SWIRL, Config::FLOAT{11.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_FADE, Config::FLOAT{0.9f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_DRAG, Config::FLOAT{1.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RETURN, Config::FLOAT{1.1f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_REFRACTION, Config::FLOAT{2.6f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_COLOR, Config::FLOAT{0.7f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RIPPLE, Config::FLOAT{2.7f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_GLINTS, Config::FLOAT{1.5f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_STEPS, Config::FLOAT{12.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_CELL, Config::FLOAT{6.0f});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_THEME, Config::STRING{"dark"});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_PRESET, Config::STRING{"default"});
 
@@ -314,6 +327,19 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.oilWarp = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_WARP);
     config.oilInactive = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_INACTIVE);
     config.oilFps = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::OIL_FPS);
+    config.liquidAmount = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_AMOUNT);
+    config.liquidRadius = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_RADIUS);
+    config.liquidForce = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_FORCE);
+    config.liquidSwirl = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_SWIRL);
+    config.liquidFade = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_FADE);
+    config.liquidDrag = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_DRAG);
+    config.liquidReturn = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_RETURN);
+    config.liquidRefraction = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_REFRACTION);
+    config.liquidColor = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_COLOR);
+    config.liquidRipple = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_RIPPLE);
+    config.liquidGlints = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_GLINTS);
+    config.liquidSteps = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_STEPS);
+    config.liquidCell = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LIQUID_CELL);
     config.defaultTheme  = getStringPtr(handle, ConfigKeys::DEFAULT_THEME);
     config.defaultPreset = getStringPtr(handle, ConfigKeys::DEFAULT_PRESET);
 

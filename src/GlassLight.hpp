@@ -79,6 +79,18 @@ namespace GlassLight {
 
 [[nodiscard]] inline bool oilOn() { return f(g_pGlobalState->config.oilAmount) > 0.001f; }
 
+[[nodiscard]] inline bool liquidOn() {
+    return f(g_pGlobalState->config.liquidAmount) > 0.001f && !g_pGlobalState->liquidUnsupported;
+}
+
+// Seconds until stirred liquid has settled: about five time constants of its
+// slowest fade. Past this a window's simulation is dropped and redraws stop.
+[[nodiscard]] inline double liquidSettle() {
+    const auto& c       = g_pGlobalState->config;
+    const float slowest = std::min({std::max(f(c.liquidFade), 0.05f), std::max(f(c.liquidReturn), 0.05f), LIQUID_FLOW_FADE});
+    return std::min(12.0, 5.0 / slowest);
+}
+
 [[nodiscard]] inline bool driftOn() { return f(g_pGlobalState->config.lightDrift) > 0.001f && lightOn(); }
 
 // The cursor position the light follows: lagged by light_lag so highlights
