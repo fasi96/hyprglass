@@ -38,7 +38,7 @@ bool CLiquidPrograms::ensure() {
         compile(gradient, "liquid_gradient.frag", {"tex", "uVel", "texel"});
 
     if (!m_ok)
-        HyprlandAPI::addNotification(PHANDLE, std::format("[{}] Liquid touch: failed to compile its shaders, liquid is off", PLUGIN_NAME),
+        HyprlandAPI::addNotification(PHANDLE, std::format("[{}] Liquid Touch: failed to compile its shaders, liquid is off", PLUGIN_NAME),
                                      CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
     return m_ok;
 }

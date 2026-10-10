@@ -538,7 +538,7 @@ bool CGlassDecoration::liquidBusy(double now) const {
     return now - m_liquidLastStir < GlassLight::liquidSettle() + 0.25;
 }
 
-// Liquid touch: step this window's fluid while it is stirred and hand its
+// Liquid Touch: step this window's fluid while it is stirred and hand its
 // textures to the glass draw through lightFrame. Runs inside the render pass;
 // CLiquidSim::update() leaves the GL state as it found it.
 void CGlassDecoration::updateLiquid(PHLMONITOR monitor, const CBox& transformBox, const SP<Render::IFramebuffer>& source) {
@@ -635,7 +635,7 @@ void CGlassDecoration::updateLiquid(PHLMONITOR monitor, const CBox& transformBox
         m_liquidWanted = false;
         if (!g_pGlobalState->liquidUnsupported) {
             g_pGlobalState->liquidUnsupported = true;
-            HyprlandAPI::addNotification(PHANDLE, std::format("[{}] Liquid touch needs half-float render targets; this GPU has none, liquid is off", PLUGIN_NAME),
+            HyprlandAPI::addNotification(PHANDLE, std::format("[{}] Liquid Touch needs half-float render targets; this GPU has none, liquid is off", PLUGIN_NAME),
                                          CHyprColor{1.0, 0.8, 0.2, 1.0}, 5000);
         }
         return;

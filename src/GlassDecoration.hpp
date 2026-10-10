@@ -55,7 +55,7 @@ class CGlassDecoration : public IHyprWindowDecoration {
     [[nodiscard]] bool        isThemeDark() const { return resolveThemeIsDark(); }
     [[nodiscard]] std::string presetName() const { return resolvePresetName(); }
 
-    // Liquid touch: the pointer moved over this window's glass (from the light
+    // Liquid Touch: the pointer moved over this window's glass (from the light
     // timer, outside rendering), and whether its liquid still needs redraws.
     void               liquidWake(double now);
     [[nodiscard]] bool liquidBusy(double now) const;
@@ -97,7 +97,7 @@ class CGlassDecoration : public IHyprWindowDecoration {
 
     float m_lastSelfSample = 0.0f;
 
-    // Liquid touch: the simulation exists only while this window is stirred.
+    // Liquid Touch: the simulation exists only while this window is stirred.
     UP<CLiquidSim> m_liquid;
     bool           m_liquidWanted   = false;
     double         m_liquidLastStir = -1e9;

@@ -1,8 +1,8 @@
 # Third-party notices
 
-## Liquid touch
+## Liquid Touch
 
-Liquid touch (`src/LiquidSim.hpp`, `src/LiquidSim.cpp`, the `liquid_*.frag`
+Liquid Touch (`src/LiquidSim.hpp`, `src/LiquidSim.cpp`, the `liquid_*.frag`
 shaders and the LIQUID TOUCH block of the glass shader in `src/Shaders.hpp`) is
 adapted from two MIT-licensed works:
 

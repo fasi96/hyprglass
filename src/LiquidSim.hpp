@@ -1,6 +1,6 @@
 #pragma once
 
-// Liquid touch: a small fluid simulation per glass window, stirred by the
+// Liquid Touch: a small fluid simulation per glass window, stirred by the
 // pointer. Velocity, liquid thickness ("dye") and a displacement field that
 // drags the view behind the glass live in half-float textures laid out in the
 // window's own box UV; the glass shader reads them (Shaders.hpp, LIQUID TOUCH).

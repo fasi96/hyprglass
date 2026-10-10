@@ -52,7 +52,7 @@ struct SGlassUniforms {
     GLint oilA = -1;
     GLint oilB = -1;
 
-    // Liquid touch (windows only)
+    // Liquid Touch (windows only)
     GLint liqOn = -1;
     GLint liqDye = -1;
     GLint liqVel = -1;

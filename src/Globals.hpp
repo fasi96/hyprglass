@@ -122,7 +122,7 @@ struct SGlobalState {
         Vector2D liquidTexel;          // one sim cell, box UV
     } lightFrame;
 
-    // Liquid touch: the glass window under the pointer (the one it stirs), the
+    // Liquid Touch: the glass window under the pointer (the one it stirs), the
     // simulation programs (compiled on the first stir) and a latch for GPUs
     // that cannot render to half-float textures.
     PHLWINDOWREF    liquidWindow;

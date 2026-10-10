@@ -106,7 +106,7 @@ inline constexpr auto GLOW_SPREAD          = "plugin:hyprglass:glow_spread";    
 inline constexpr auto GLOW_RING            = "plugin:hyprglass:glow_ring";             // ring width, px
 // Materialize: new windows appear by ramping up their bending, not by fading.
 inline constexpr auto MATERIALIZE_DURATION = "plugin:hyprglass:materialize_duration";  // seconds (0 = off)
-// Liquid touch: the pointer stirs a thin clear liquid on the glass of the window
+// Liquid Touch: the pointer stirs a thin clear liquid on the glass of the window
 // under it; a small fluid simulation runs per window, only while it is stirred.
 inline constexpr auto LIQUID_AMOUNT        = "plugin:hyprglass:liquid_amount";         // 0 = off, 1 = full look
 inline constexpr auto LIQUID_RADIUS        = "plugin:hyprglass:liquid_radius";         // brush radius, px

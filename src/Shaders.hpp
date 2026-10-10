@@ -84,7 +84,7 @@ uniform vec3  parallax;     // xy = view shift px (cursor tilt), z = extra towar
 uniform vec4  oilA;         // amount (0 = off), time (s, pre-scaled by speed), swirl size px, colourfulness
 uniform vec4  oilB;         // warp px, unused x3
 
-// Liquid touch (LiquidSim.hpp): this window's fluid simulation, in box UV.
+// Liquid Touch (LiquidSim.hpp): this window's fluid simulation, in box UV.
 uniform int       liqOn;      // 1 while this window's liquid is live
 uniform sampler2D liqDye;     // x = liquid thickness 0..1
 uniform sampler2D liqVel;     // xy = flow, sim cells per second
@@ -669,7 +669,7 @@ void main() {
 }
 )GLSL"},
 
-    // ---- Liquid touch: fluid simulation passes (LiquidSim.cpp) ----
+    // ---- Liquid Touch: fluid simulation passes (LiquidSim.cpp) ----
     // Adapted from Sabo Sugi's "Viscous Liquid - Cursor FX" and Pavel Dobryakov's
     // WebGL Fluid Simulation, both MIT: see THIRD_PARTY_NOTICES.md.
     {"liquid_splat.frag", R"GLSL(
