@@ -22,11 +22,11 @@ inline constexpr float LIQUID_FLOW_FADE = 1.2f;  // velocity dissipation (1/s)
 inline constexpr float LIQUID_PRESSURE  = 0.8f;  // share of last frame's pressure kept as the solver's start
 
 struct SLiquidParams {
-    float swirl = 11.0f; // vorticity confinement
+    float swirl = 8.0f;  // vorticity confinement
     float fade  = 0.9f;  // liquid dissipation (1/s)
     float drag  = 1.0f;  // how far the flow carries the view behind
     float back  = 1.1f;  // how fast the dragged view returns (1/s)
-    int   steps = 12;    // pressure solver iterations
+    int   steps = 20;    // pressure solver iterations
 };
 
 // One stroke of the pointer, from a to b.

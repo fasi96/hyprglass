@@ -90,15 +90,15 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_AMOUNT, Config::FLOAT{0.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RADIUS, Config::FLOAT{60.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_FORCE, Config::FLOAT{1.25f});
-    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_SWIRL, Config::FLOAT{11.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_SWIRL, Config::FLOAT{8.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_FADE, Config::FLOAT{0.9f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_DRAG, Config::FLOAT{1.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RETURN, Config::FLOAT{1.1f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_REFRACTION, Config::FLOAT{2.6f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_COLOR, Config::FLOAT{0.7f});
-    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RIPPLE, Config::FLOAT{2.7f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_RIPPLE, Config::FLOAT{1.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_GLINTS, Config::FLOAT{1.5f});
-    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_STEPS, Config::FLOAT{12.0f});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_STEPS, Config::FLOAT{20.0f});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIQUID_CELL, Config::FLOAT{6.0f});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_THEME, Config::STRING{"dark"});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_PRESET, Config::STRING{"default"});

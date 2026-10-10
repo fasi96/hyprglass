@@ -50,10 +50,10 @@ All global-only, set with `hl.plugin.hyprglass.config({ ... })` like the options
 | `glow_duration`, `glow_spread`, `glow_ring` | `0.7`, `1.2`, `50` | Seconds, share of the window, ring width px |
 | `materialize_duration` | `0.35` | Seconds a new window takes to materialize (0 = off) |
 | `liquid_amount` | `0` | Liquid touch: moving the pointer stirs a thin clear liquid on the glass under it (0 = off, 1 = full look) |
-| `liquid_radius`, `liquid_force`, `liquid_swirl` | `60`, `1.25`, `11` | Brush radius px, how hard the pointer pushes, how much the flow curls |
+| `liquid_radius`, `liquid_force`, `liquid_swirl` | `60`, `1.25`, `8` | Brush radius px, how hard the pointer pushes, how much the flow curls |
 | `liquid_fade`, `liquid_drag`, `liquid_return` | `0.9`, `1.0`, `1.1` | How fast it dries, how far it carries the view behind, how fast that flows back |
-| `liquid_refraction`, `liquid_color`, `liquid_ripple`, `liquid_glints` | `2.6`, `0.7`, `2.7`, `1.5` | Lens strength, rainbow split, ripples from fast flow, sharp highlights |
-| `liquid_steps`, `liquid_cell` | `12`, `6` | Cost: pressure solver steps per frame, simulation cell size px |
+| `liquid_refraction`, `liquid_color`, `liquid_ripple`, `liquid_glints` | `2.6`, `0.7`, `1.0`, `1.5` | Lens strength, rainbow split, ripples from fast flow, sharp highlights |
+| `liquid_steps`, `liquid_cell` | `20`, `6` | Cost: pressure solver steps per frame, simulation cell size px |
 
 Liquid touch runs a small fluid simulation per window, only while that window is being stirred; once the liquid settles the simulation is freed and the window stops redrawing. It needs half-float render targets (any GLES 3.2 GPU with `EXT_color_buffer_half_float`); without them it turns itself off. The look follows "Viscous Liquid - Cursor FX" by sabosugi on CodePen.
 
