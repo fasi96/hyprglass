@@ -102,7 +102,8 @@ class CGlassDecoration : public IHyprWindowDecoration {
     bool           m_liquidWanted   = false;
     double         m_liquidLastStir = -1e9;
     double         m_liquidLastStep = 0.0;
-    Vector2D       m_liquidCursor;   // the pointer as the liquid sees it (eased), global logical
+    Vector2D       m_liquidCursor;      // the pointer as the liquid sees it (sprung), global logical
+    Vector2D       m_liquidCursorVel;   // its velocity, logical px/s
     void           updateLiquid(PHLMONITOR monitor, const CBox& transformBox, const SP<Render::IFramebuffer>& source);
 
     // Frame serial the last glass element was queued for, and its index in that

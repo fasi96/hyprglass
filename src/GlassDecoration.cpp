@@ -566,9 +566,10 @@ void CGlassDecoration::updateLiquid(PHLMONITOR monitor, const CBox& transformBox
     const Vector2D mouse = g_pInputManager->getMouseCoordsInternal();
     const bool     fresh = !m_liquid;
     if (fresh) {
-        m_liquid         = makeUnique<CLiquidSim>();
-        m_liquidCursor   = mouse;
-        m_liquidLastStep = now;
+        m_liquid          = makeUnique<CLiquidSim>();
+        m_liquidCursor    = mouse;
+        m_liquidCursorVel = {};
+        m_liquidLastStep  = now;
     }
 
     const auto publish = [&] {
@@ -589,9 +590,12 @@ void CGlassDecoration::updateLiquid(PHLMONITOR monitor, const CBox& transformBox
     const float dt   = std::clamp(static_cast<float>(since), 1.0f / 240.0f, 1.0f / 30.0f);
     m_liquidLastStep = now;
 
-    // the pointer as the liquid sees it: eased, so strokes come out smooth
+    // the pointer as the liquid sees it: a critically damped spring, so strokes stay
+    // smooth even when the mouse only reports a few dozen times a second
     const Vector2D prev = m_liquidCursor;
-    m_liquidCursor      = prev + (mouse - prev) * (1.0 - std::exp(-dt * LIQUID_FOLLOW));
+    const double   w    = LIQUID_SPRING;
+    m_liquidCursorVel   = m_liquidCursorVel + ((mouse - m_liquidCursor) * (w * w) - m_liquidCursorVel * (2.0 * w)) * dt;
+    m_liquidCursor      = m_liquidCursor + m_liquidCursorVel * dt;
     const double   seg  = std::hypot(m_liquidCursor.x - prev.x, m_liquidCursor.y - prev.y);
 
     SLiquidSplat splat;

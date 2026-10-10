@@ -18,7 +18,11 @@
 #include <utility>
 
 // Fixed parts of the look, tuned in the browser prototype.
-inline constexpr float LIQUID_FOLLOW    = 25.0f; // pointer easing (1/s): higher = snappier
+// The pointer as the liquid sees it follows the real one on a critically damped
+// spring (rad/s). Bluetooth mice report only 15-30 times a second on Linux; a plain
+// ease toward each report made strokes pulse at that rate. 14 keeps the stroke's
+// speed within ~2x frame to frame at 15 Hz and trails the pointer by ~0.14 s.
+inline constexpr float LIQUID_SPRING    = 14.0f;
 inline constexpr float LIQUID_FLOW_FADE = 1.2f;  // velocity dissipation (1/s)
 inline constexpr float LIQUID_PRESSURE  = 0.8f;  // share of last frame's pressure kept as the solver's start
 
