@@ -1,14 +1,14 @@
 [repository]
 name = "HyprGlassLiquid"
 authors = ["Hyprnux", "fasi96"]
-description = "HyprGlass + Liquid Glass motion: cursor light, parallax, oil film, click glow, materialize"
+description = "HyprGlass + Liquid Glass motion: cursor light, parallax, oil film, click glow, materialize, Liquid Touch"
 
 # Map a Hyprland release commit -> the commit of this fork that builds against it.
 # hyprpm reads the running Hyprland commit, finds the matching pin and resets the
 # repo to the paired commit before building; with no match it builds main HEAD.
 # Only Hyprland 0.56.2 is tested so far.
 commit_pins = [
-  ["efb50993780079460b0cbed1363e2166a2de1d9f", "8c0bdba20dc4c497b5c332881d75d660b7983d2e"], # hyprland 0.56.2 -> liquid-glass on hyprglass v0.9.0
+  ["efb50993780079460b0cbed1363e2166a2de1d9f", "47dfd2491ca9f7e3a945b8712f118fd1ca82e55b"], # hyprland 0.56.2 -> Liquid Touch on hyprglass v0.9.0
 ]
 
 [hyprglass]
