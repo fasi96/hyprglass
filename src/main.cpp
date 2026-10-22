@@ -17,6 +17,7 @@
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/managers/SessionLockManager.hpp>
 #include "SubsurfaceGeometry.hpp"
 
 #include <hyprland/src/Compositor.hpp>
@@ -392,6 +393,19 @@ static void refreshSurfaceObserver() {
 
 using renderLayerFn = void (*)(Render::IHyprRenderer*, PHLLS, PHLMONITOR, const Time::steady_tp&, bool, bool);
 
+// The original renderLayer draws nothing for a hidden layer, for an above-lock
+// layer outside the lock screen pass while locked, or for a layer without the
+// abovelock rule in the lock screen pass (Hyprland v0.56.2 Renderer.cpp:937-945).
+// Glass is queued before it runs, so it has to make the same checks first or the
+// glass of a layer that may not show over the lock screen would be drawn there.
+// The lock screen pass gets no layer glass at all.
+static bool layerGlassAllowed(const PHLLS& layer, bool lockscreen) {
+    if (!layer || !layer->visible() || lockscreen)
+        return false;
+    const bool aboveLock = layer->m_ruleApplicator->aboveLock().valueOrDefault() != 0;
+    return !(aboveLock && g_pSessionLockManager && g_pSessionLockManager->isSessionLocked());
+}
+
 static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PHLMONITOR monitor,
                            const Time::steady_tp& now, bool popups, bool lockscreen) {
     const auto& config = g_pGlobalState->config;
@@ -425,7 +439,8 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
     });
 
     // Only inject glass on the main surface pass, not popups
-    if (!popups && config.layersEnabled && **config.layersEnabled && shouldGlassLayer(layerSurface)) {
+    if (!popups && config.layersEnabled && **config.layersEnabled && layerGlassAllowed(layerSurface, lockscreen) &&
+        shouldGlassLayer(layerSurface)) {
         // Lazy-create per-layer state, replacing stale entries whose weak ref died
         // (can happen when a new CLayerSurface is allocated at the same address)
         auto* rawPtr = layerSurface.get();
