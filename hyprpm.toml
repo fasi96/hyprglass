@@ -8,7 +8,7 @@ description = "HyprGlass + Liquid Glass motion: cursor light, parallax, oil film
 # repo to the paired commit before building; with no match it builds main HEAD.
 # Only Hyprland 0.56.2 is tested so far.
 commit_pins = [
-  ["efb50993780079460b0cbed1363e2166a2de1d9f", "47dfd2491ca9f7e3a945b8712f118fd1ca82e55b"], # hyprland 0.56.2 -> Liquid Touch on hyprglass v0.9.0
+  ["efb50993780079460b0cbed1363e2166a2de1d9f", "73be326bafa37456dc9ed368d2c7e6cd0ba29db7"], # hyprland 0.56.2 -> no layer glass on the lock screen
 ]
 
 [hyprglass]
