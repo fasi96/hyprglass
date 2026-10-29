@@ -64,6 +64,9 @@ struct SMaskInfo {
     Vector2D uvOffset; // mapping from glass box UV → full surface UV
     Vector2D uvScale;
     float    alphaThreshold = 0.001f;
+    // Alpha mask only: glass fades in over this alpha range above alphaThreshold, so
+    // antialiased edges fade instead of cutting off. 0 = hard mask.
+    float    coverage       = 0.0f;
 
     // 0 = alpha-threshold mask, 1 = ext-background-effect-v1 protocol region
     int                                        maskMode        = 0;

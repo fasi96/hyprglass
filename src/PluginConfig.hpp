@@ -170,6 +170,9 @@ inline constexpr auto LAYERS_LIVE_RESAMPLE_FPS          = "plugin:hyprglass:laye
 inline constexpr auto LAYERS_FORCE_LIVE_RESAMPLE        = "plugin:hyprglass:layers:force_live_resample";
 inline constexpr auto LAYERS_MASK_MODE                  = "plugin:hyprglass:layers:mask_mode";
 inline constexpr auto LAYERS_NAMESPACE_MASK_MODES       = "plugin:hyprglass:layers:namespace_mask_modes";
+// Alpha mask only: alpha range above mask_threshold over which layer glass fades in; 0 keeps the hard mask.
+inline constexpr auto LAYERS_MASK_FEATHER               = "plugin:hyprglass:layers:mask_feather";
+inline constexpr auto LAYERS_NAMESPACE_MASK_FEATHERS    = "plugin:hyprglass:layers:namespace_mask_feathers";
 inline constexpr auto LAYERS_MANAGE_BLUR                = "plugin:hyprglass:layers:manage_blur";
 
 // Subsurface item glass support (see GlassSubsurfaceState).
@@ -423,6 +426,8 @@ struct SPluginConfig {
     Hyprlang::INT* const* layersForceLiveResample        = nullptr;
     StringConfigPtr       layersMaskMode;
     StringConfigPtr       layersNamespaceMaskModes;
+    Hyprlang::FLOAT* const* layersAlphaCoverage          = nullptr;
+    StringConfigPtr       layersNamespaceAlphaCoverages;
     Hyprlang::INT* const* layersManageBlur               = nullptr;
 
     Hyprlang::INT* const*   subsurfacesEnabled = nullptr;

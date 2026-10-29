@@ -468,6 +468,16 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha, EM
             // makes the mask fall below threshold early and the glass blinks off.
             maskInfo.maskMode       = 0;
             maskInfo.alphaThreshold = maskThreshold * std::clamp(alpha, 0.0f, 1.0f);
+
+            // Region mode leaves coverage at 0: the app's region alone decides where glass goes.
+            const auto& cfg = g_pGlobalState->config;
+            float coverage  = cfg.layersAlphaCoverage ? static_cast<float>(**cfg.layersAlphaCoverage) : 0.0f;
+            auto coverageIt = g_pGlobalState->layerNamespaceAlphaCoverages.find(layerSurface->m_namespace);
+            if (coverageIt != g_pGlobalState->layerNamespaceAlphaCoverages.end())
+                coverage = coverageIt->second;
+            // Capped so full-alpha content still gets full-strength glass.
+            coverage          = std::clamp(coverage, 0.0f, std::max(0.0f, 1.0f - maskThreshold));
+            maskInfo.coverage = coverage * std::clamp(alpha, 0.0f, 1.0f);
             break;
         }
         case EMaskSource::PROTOCOL_REGION: {

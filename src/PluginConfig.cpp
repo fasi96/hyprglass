@@ -120,6 +120,8 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::LAYERS_FORCE_LIVE_RESAMPLE, Config::INTEGER{0});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_MASK_MODE, Config::STRING{"auto"});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_MODES, Config::STRING{});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LAYERS_MASK_FEATHER, Config::FLOAT{0.0});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_FEATHERS, Config::STRING{});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::LAYERS_MANAGE_BLUR, Config::INTEGER{1});
 
     // Subsurface item glass
@@ -358,6 +360,8 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.layersForceLiveResample = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LAYERS_FORCE_LIVE_RESAMPLE);
     config.layersMaskMode           = getStringPtr(handle, ConfigKeys::LAYERS_MASK_MODE);
     config.layersNamespaceMaskModes = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_MODES);
+    config.layersAlphaCoverage           = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LAYERS_MASK_FEATHER);
+    config.layersNamespaceAlphaCoverages = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_FEATHERS);
     config.layersManageBlur         = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LAYERS_MANAGE_BLUR);
 
     config.subsurfacesEnabled = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::SUBSURFACES_ENABLED);
@@ -808,6 +812,7 @@ struct SPendingLayer {
     std::string                   ns;
     std::string                   preset;
     float                         maskThreshold = -1.0f;
+    float                         maskFeather   = -1.0f;
     bool                          exclude       = false;
     int                           liveResample  = -1; // -1 = not set
     std::optional<ELayerMaskMode> maskMode;
@@ -836,6 +841,11 @@ static int handleLuaLayer(lua_State* L) {
         lua_getfield(L, 2, "mask_threshold");
         if (lua_isnumber(L, -1))
             entry.maskThreshold = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "mask_feather");
+        if (lua_isnumber(L, -1))
+            entry.maskFeather = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
         lua_getfield(L, 2, "live_resample");
@@ -868,6 +878,8 @@ void commitPendingLayers() {
                 g_pGlobalState->layerNamespacePresets[entry.ns] = entry.preset;
             if (entry.maskThreshold >= 0.0f)
                 g_pGlobalState->layerNamespaceMaskThresholds[entry.ns] = entry.maskThreshold;
+            if (entry.maskFeather >= 0.0f)
+                g_pGlobalState->layerNamespaceAlphaCoverages[entry.ns] = entry.maskFeather;
             if (entry.liveResample >= 0)
                 g_pGlobalState->layerNamespaceLiveResample[entry.ns] = entry.liveResample != 0;
             if (entry.maskMode)
