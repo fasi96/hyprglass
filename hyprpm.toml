@@ -6,9 +6,10 @@ description = "HyprGlass + Liquid Glass motion: cursor light, parallax, oil film
 # Map a Hyprland release commit -> the commit of this fork that builds against it.
 # hyprpm reads the running Hyprland commit, finds the matching pin and resets the
 # repo to the paired commit before building; with no match it builds main HEAD.
-# Only Hyprland 0.56.2 is tested so far.
+# Tested: Hyprland 0.56.2 and 0.57.0, each pinned to its own Liquid Glass merge.
 commit_pins = [
-  ["efb50993780079460b0cbed1363e2166a2de1d9f", "73be326bafa37456dc9ed368d2c7e6cd0ba29db7"], # hyprland 0.56.2 -> no layer glass on the lock screen
+  ["efb50993780079460b0cbed1363e2166a2de1d9f", "c7495d8fa1f01c09b16a4eec0cfdb0c72ecfe880"], # hyprland 0.56.2 -> Liquid Glass on hyprglass v0.11.0
+  ["0aa6745f705f2c4b0a5004eb019ef76e5bbdb426", "10657dc04247fe42718d12707938db477c44b625"], # hyprland 0.57.0 -> Liquid Glass on hyprglass v1.0.0
 ]
 
 [hyprglass]

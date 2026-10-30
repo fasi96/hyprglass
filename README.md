@@ -11,7 +11,7 @@ A fork of [**HyprGlass**](https://github.com/hyprnux/hyprglass) by [hyprnux](htt
 - **Materialize**: new windows appear by bending into existence instead of fading.
 - **Crease-free bevel**: no seam along the corner diagonals.
 
-> **Status:** early, tested on **Hyprland 0.56.2** (Omarchy). Everything else from HyprGlass works as documented below.
+> **Status:** tested on **Hyprland 0.56.2 and 0.57.0** (Omarchy), on HyprGlass v0.11.0 and v1.0.0. Everything else from HyprGlass works as documented below.
 > For a one-command setup on Omarchy, with a live slider app (Glass Tuner), see [**omarchy-liquid-glass**](https://github.com/fasi96/omarchy-liquid-glass).
 
 ### Install
