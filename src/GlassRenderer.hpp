@@ -152,7 +152,7 @@ struct SSampleMap {
 // True when every pixel of `box`, clipped to the framebuffer, lies inside `damage`: the
 // frame redraws all of it. The only coverage predicate; sampleRegionCovered() asks it for
 // the sample's source rectangle. `box` is in post-transform framebuffer pixels; `damage`
-// is in render space like m_renderData.damage, and is transformed by `monitor` to match
+// is in render space like the render context's damage, and is transformed by `monitor` to match
 // (a null monitor for a region already in framebuffer space, like the x-ray one).
 [[nodiscard]] bool damageCoversBox(const CBox& box, const SP<Render::IFramebuffer>& framebuffer, const CRegion& damage,
                                    const PHLMONITOR& monitor);
@@ -163,28 +163,30 @@ struct SSampleMap {
 [[nodiscard]] bool sampleRegionCovered(const CBox& box, const SP<Render::IFramebuffer>& source, const CRegion& damage,
                                        const PHLMONITOR& monitor);
 
-void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IFramebuffer> sourceFramebuffer,
-                       CBox box, Vector2D& outPaddingRatio, int downscale = 1);
+void sampleBackground(Render::CRenderContext& ctx, SP<Render::IFramebuffer>& sampleFramebuffer,
+                       SP<Render::IFramebuffer> sourceFramebuffer, CBox box, Vector2D& outPaddingRatio, int downscale = 1);
 
 // Draws the window's own committed surfaces over the sampled background, so the
 // blur that follows works on a mix of the desktop and the window's own content.
 // box is the same framebuffer-space box sampleBackground() was given.
-void blendOwnContent(SP<Render::IFramebuffer>& sampleFramebuffer, PHLWINDOW window, PHLMONITOR monitor,
-                      const CBox& box, int downscale, float amount, float cornerRadius, float roundingPower);
+void blendOwnContent(Render::CRenderContext& ctx, SP<Render::IFramebuffer>& sampleFramebuffer, PHLWINDOW window,
+                      PHLMONITOR monitor, const CBox& box, int downscale, float amount, float cornerRadius, float roundingPower);
 
 // callerFramebuffer is re-bound after the blur ping-pong; the viewport is
 // restored from its size so it always matches the re-bound framebuffer
 // (monitor fields would be wrong on 90°/270° transformed monitors).
 // temporaryFramebuffer: the ping-pong target; null uses the one every glass shares. A caller blurring
 // at another size than the rest passes its own, so the shared one is not reallocated back and forth.
-void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
-                    SP<Render::IFramebuffer> callerFramebuffer, SP<Render::IFramebuffer>* temporaryFramebuffer = nullptr);
+void blurBackground(Render::CRenderContext& ctx, SP<Render::IFramebuffer> sampleFramebuffer, float radius,
+                     int iterations, SP<Render::IFramebuffer> callerFramebuffer,
+                     SP<Render::IFramebuffer>* temporaryFramebuffer = nullptr);
 
 // The frosted copy of a window's sample (see Frost.hpp): the sample at half its size, blurred
 // further by radius (in that smaller framebuffer's pixels). `copy` and `temporary` are the caller's,
 // allocated here and reused while the size holds. callerFramebuffer is left bound, as blurBackground() does.
-bool buildFrostCopy(const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy, SP<Render::IFramebuffer>& temporary,
-                    float radius, int iterations, const SP<Render::IFramebuffer>& callerFramebuffer);
+bool buildFrostCopy(Render::CRenderContext& ctx, const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy,
+                    SP<Render::IFramebuffer>& temporary, float radius, int iterations,
+                    const SP<Render::IFramebuffer>& callerFramebuffer);
 
 // What a window's glass draw needs for frost: the frosted copy and how much of it shows (0..1).
 struct SFrostInput {
@@ -205,7 +207,8 @@ struct SFrostInput {
 // its fade). Only the active window's glass passes one above 0.
 //
 // frost: windows only, null when the glass is not frosted right now (see SFrostInput).
-void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
+void applyGlassEffect(Render::CRenderContext& ctx,
+                       SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, const std::array<float, 4>& radii, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,

@@ -219,7 +219,7 @@ void CLiquidSim::step(float dt, const SLiquidParams& params) {
     m_velocity.swap();
 }
 
-bool CLiquidSim::update(int gridW, int gridH, float dt, const SLiquidSplat* splat, const SLiquidParams& params,
+bool CLiquidSim::update(Render::CRenderContext& ctx, int gridW, int gridH, float dt, const SLiquidSplat* splat, const SLiquidParams& params,
                         GLuint restoreFbo, int restoreW, int restoreH) {
     if (!g_pGlobalState->liquidPrograms.ensure())
         return false;
@@ -227,7 +227,7 @@ bool CLiquidSim::update(int gridW, int gridH, float dt, const SLiquidSplat* spla
     // Each pass overwrites its whole target: no blending, and no scissor or
     // stencil left over from the element that ran before us.
     g_pHyprRenderer->blend(false);
-    g_pHyprOpenGL->scissor(nullptr);
+    g_pHyprOpenGL->scissor(ctx, nullptr);
     if (glIsEnabled(GL_SCISSOR_TEST))
         glDisable(GL_SCISSOR_TEST);
     if (glIsEnabled(GL_STENCIL_TEST))

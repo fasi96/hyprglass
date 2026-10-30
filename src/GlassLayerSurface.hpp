@@ -20,17 +20,17 @@ class CGlassLayerSurface {
     enum class EMaskSource { ALPHA_THRESHOLD, PROTOCOL_REGION, CONTOUR, NONE };
 
     // Phase 1 (pre-surface): sample+blur background, redirect currentFB → temp FBO
-    void sampleAndRedirect(PHLMONITOR monitor, float alpha, bool xray);
+    void sampleAndRedirect(Render::CRenderContext& ctx, PHLMONITOR monitor, float alpha, bool xray);
 
     // Resolved once per frame where the pass element is queued. Never for a
     // background or bottom layer: they render before the snapshot is taken.
     [[nodiscard]] bool resolveXray() const;
 
     // The x-ray snapshot holds everything this layer would sample.
-    [[nodiscard]] bool xraySnapshotCovers(PHLMONITOR monitor) const;
+    [[nodiscard]] bool xraySnapshotCovers(Render::CRenderContext& ctx, PHLMONITOR monitor) const;
 
     // Phase 2 (post-surface): restore currentFB, apply glass masked by temp FBO, blit surface
-    void compositeAndRestore(PHLMONITOR monitor, float alpha, EMaskSource maskSource);
+    void compositeAndRestore(Render::CRenderContext& ctx, PHLMONITOR monitor, float alpha, EMaskSource maskSource);
 
     void damageIfMoved();
 
@@ -149,8 +149,8 @@ class CGlassLayerSurface {
     // Brings the field up to date for this draw (a build when one is due and this frame redraws
     // the whole layer) and points maskInfo at it. False: draw with the layer's rectangle, as every
     // other layer does: no field yet, a stale one for another size, or contour unavailable.
-    [[nodiscard]] bool attachContour(PHLMONITOR monitor, const CBox& transformBox, float alpha, float maskThreshold,
-                                     const SResolveContext& ctx, GlassRenderer::SMaskInfo& maskInfo);
+    [[nodiscard]] bool attachContour(Render::CRenderContext& ctx, PHLMONITOR monitor, const CBox& transformBox, float alpha,
+                                     float maskThreshold, const SResolveContext& resolveContext, GlassRenderer::SMaskInfo& maskInfo);
 
     [[nodiscard]] bool           resolveThemeIsDark() const;
     [[nodiscard]] std::string    resolvePresetName() const;

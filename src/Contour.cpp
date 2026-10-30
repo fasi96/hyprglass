@@ -130,8 +130,8 @@ CField::EInvalidation CField::flushDeferred(std::chrono::steady_clock::time_poin
     return EInvalidation::Now;
 }
 
-bool CField::build(const SBuildKey& key, const SP<Render::IFramebuffer>& layerRender, const CBox& box, float fadeAlpha,
-                   const SP<Render::IFramebuffer>& callerFramebuffer) {
+bool CField::build(Render::CRenderContext& ctx, const SBuildKey& key, const SP<Render::IFramebuffer>& layerRender, const CBox& box,
+                   float fadeAlpha, const SP<Render::IFramebuffer>& callerFramebuffer) {
     if (!g_pGlobalState || !layerRender || !layerRender->getTexture() || !callerFramebuffer)
         return false;
 
@@ -179,13 +179,14 @@ bool CField::build(const SBuildKey& key, const SP<Render::IFramebuffer>& layerRe
         glDisable(GL_SCISSOR_TEST);
         Diagnostics::recordStateDesync("scissor on before the contour passes");
     }
+    g_pHyprOpenGL->setCapStatus(GL_STENCIL_TEST, false);
     if (glIsEnabled(GL_STENCIL_TEST)) {
         glDisable(GL_STENCIL_TEST);
         Diagnostics::recordStateDesync("stencil on before the contour passes");
     }
     g_pHyprRenderer->blend(false);
     g_pHyprOpenGL->setViewport(0, 0, plan.fieldWidth, plan.fieldHeight);
-    glActiveTexture(GL_TEXTURE0);
+    g_pHyprOpenGL->setActiveTexture(GL_TEXTURE0);
 
     const float fieldWidth  = static_cast<float>(plan.fieldWidth);
     const float fieldHeight = static_cast<float>(plan.fieldHeight);
@@ -196,7 +197,7 @@ bool CField::build(const SBuildKey& key, const SP<Render::IFramebuffer>& layerRe
         shader->setUniformMatrix3fv(SHADER_PROJ, 1, GL_FALSE, FULLSCREEN_PROJECTION);
         setUniforms();
         glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
-        glBindFramebuffer(GL_FRAMEBUFFER, framebufferId(target));
+        g_pHyprOpenGL->bindFramebuffer(GL_FRAMEBUFFER, framebufferId(target));
         source->getTexture()->bind();
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     };
@@ -269,11 +270,11 @@ bool CField::build(const SBuildKey& key, const SP<Render::IFramebuffer>& layerRe
     // Hand back the state blurBackground() hands back: Hyprland's blending at every element
     // boundary, the caller's framebuffer and the viewport of its own size.
     g_pHyprRenderer->blend(true);
-    glBindFramebuffer(GL_FRAMEBUFFER, framebufferId(callerFramebuffer));
+    g_pHyprOpenGL->bindFramebuffer(GL_FRAMEBUFFER, framebufferId(callerFramebuffer));
     glBindVertexArray(0);
     g_pHyprOpenGL->setViewport(0, 0, static_cast<int>(callerFramebuffer->m_size.x), static_cast<int>(callerFramebuffer->m_size.y));
 
-    if (const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock())
+    if (const auto monitor = ctx.m_data.pMonitor.lock())
         Diagnostics::recordContourRebuild(monitor->m_id);
 
     m_builtKey        = key;

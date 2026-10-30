@@ -17,6 +17,10 @@
 #include <unordered_map>
 #include <utility>
 
+namespace Render {
+    class CRenderContext;
+}
+
 // Fixed parts of the look, tuned in the browser prototype.
 // The pointer as the liquid sees it follows the real one on a critically damped
 // spring (rad/s). Bluetooth mice report only 15-30 times a second on Linux; a plain
@@ -77,7 +81,7 @@ class CLiquidSim {
     // Runs inside the render pass and leaves restoreFbo bound with a
     // restoreW x restoreH viewport and blending on, like blurBackground().
     // False when half-float render targets are unavailable.
-    [[nodiscard]] bool update(int gridW, int gridH, float dt, const SLiquidSplat* splat, const SLiquidParams& params,
+    [[nodiscard]] bool update(Render::CRenderContext& ctx, int gridW, int gridH, float dt, const SLiquidSplat* splat, const SLiquidParams& params,
                               GLuint restoreFbo, int restoreW, int restoreH);
 
     [[nodiscard]] GLuint dye() const { return m_dye.read.tex; }

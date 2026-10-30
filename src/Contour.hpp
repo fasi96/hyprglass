@@ -8,6 +8,10 @@
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprutils/math/Box.hpp>
 
+namespace Render {
+    class CRenderContext;
+}
+
 // Contour: a layer with mask_mode = contour gets edge, bend and highlights along the
 // outline its app actually draws, instead of along the layer's rectangle. The outline is
 // a signed distance field, built on the GPU from the layer's own render at a fraction of
@@ -174,8 +178,8 @@ class CField {
     // for `key`. `box` is the layer box in that framebuffer's pixels, `fadeAlpha` the layer's
     // current alpha. `callerFramebuffer` is re-bound afterwards. False when the GPU or the
     // shaders cannot do it (the caller falls back to the layer's rectangle), or on a failed allocation.
-    [[nodiscard]] bool build(const SBuildKey& key, const SP<Render::IFramebuffer>& layerRender, const CBox& box, float fadeAlpha,
-                             const SP<Render::IFramebuffer>& callerFramebuffer);
+    [[nodiscard]] bool build(Render::CRenderContext& ctx, const SBuildKey& key, const SP<Render::IFramebuffer>& layerRender, const CBox& box,
+                             float fadeAlpha, const SP<Render::IFramebuffer>& callerFramebuffer);
 
     // Frees the field, and the shared scratch with the last one.
     void release() noexcept;

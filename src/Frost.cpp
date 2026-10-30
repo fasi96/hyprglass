@@ -2,7 +2,8 @@
 #include "WindowGeometry.hpp"
 
 #include <hyprland/src/desktop/state/ViewState.hpp>
-#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprutils/math/Region.hpp>
@@ -14,7 +15,7 @@ namespace {
 // Hyprland draws tiled windows, then floating ones, then pinned ones, each group in
 // list order (later is above), with a visible special workspace over the regular ones.
 int drawTier(const PHLWINDOW& window) {
-    const int layer = window->m_pinned ? 2 : (window->m_isFloating ? 1 : 0);
+    const int layer = (window->m_state & Desktop::View::WINDOW_STATE_PINNED) ? 2 : (window->isFloating() ? 1 : 0);
     return window->onSpecialWorkspace() ? layer + 3 : layer;
 }
 
@@ -50,9 +51,9 @@ float coveredFraction(const PHLWINDOW& window, const PHLMONITOR& monitor, const 
         if (!below)
             continue;
 
-        if (!other->m_isMapped || other->isHidden() || !other->visibleByAlpha())
+        if (!other->mapped() || other->isHidden() || other->presentation().alphaTotal() == 0.f)
             continue;
-        if (fullscreenWindow && other != fullscreenWindow && !(other->m_isFloating && other->shouldRenderOverFullscreen()))
+        if (fullscreenWindow && other != fullscreenWindow && !(other->isFloating() && other->shouldRenderOverFullscreen()))
             continue;
         if (!g_pHyprRenderer->shouldRenderWindow(other, monitor))
             continue;

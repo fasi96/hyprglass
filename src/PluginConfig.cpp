@@ -304,8 +304,7 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_FROST, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_FROST_BLUR, Config::FLOAT{SENTINEL_FLOAT});
 
-    // Legacy config keyword plus Lua-config callbacks for custom presets and layers.
-    HyprlandAPI::addConfigKeyword(handle, ConfigKeys::PRESET_KEYWORD, handlePresetKeyword, Hyprlang::SHandlerOptions{});
+    // Lua-config callbacks for custom presets and layers (hyprland-git has no legacy config).
     HyprlandAPI::addLuaFunction(handle, "hyprglass", "preset", handleLuaPreset);
     HyprlandAPI::addLuaFunction(handle, "hyprglass", "layer", handleLuaLayer);
     HyprlandAPI::addLuaFunction(handle, "hyprglass", "config", handleLuaConfig);
