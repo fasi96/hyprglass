@@ -426,7 +426,7 @@ static void refreshSurfaceObserver() {
     BackgroundDamageObserver::refreshEnabled();
 }
 
-using renderLayerFn = void (*)(Render::IHyprRenderer*, Render::CRenderContext&, PHLLS, PHLMONITOR, const Time::steady_tp&, bool, bool);
+using renderLayerFn = void (*)(Render::IHyprRenderer*, Render::CRenderContext&, PHLLS, PHLMONITOR, const Time::steady_tp&, bool, bool, bool);
 
 // Mirrors renderLayer()'s abovelock early-out: while locked, every layer is
 // offered twice per frame (workspace pass, then the lockscreen pass) and
@@ -464,7 +464,7 @@ static void releaseContourFields(bool everything) {
 }
 
 static void hkRenderLayer(Render::IHyprRenderer* thisptr, Render::CRenderContext& ctx, PHLLS layerSurface,
-                           PHLMONITOR monitor, const Time::steady_tp& now, bool popups, bool lockscreen) {
+                           PHLMONITOR monitor, const Time::steady_tp& now, bool popups, bool lockscreen, bool workspaceScene) {
     const auto& config = g_pGlobalState->config;
 
     // layers:enabled can flip without a config reload (hyprctl keyword), so follow it
@@ -477,7 +477,7 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, Render::CRenderContext
     // starts transparent/black, so sampling it as a background can bake a black
     // rectangle into the fade-out snapshot.
     if (ctx.m_renderingSnapshot) {
-        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
+        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen, workspaceScene);
         return;
     }
 
@@ -485,12 +485,12 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, Render::CRenderContext
     // no layer registration. Its framebuffer holds content the real frame must not
     // inherit, and its geometry is not the one our caches are keyed on.
     if (RenderGuards::isForeignRender(ctx)) {
-        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
+        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen, workspaceScene);
         return;
     }
 
     if (layerSkippedForLock(layerSurface, lockscreen)) {
-        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
+        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen, workspaceScene);
         return;
     }
 
@@ -519,13 +519,13 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, Render::CRenderContext
 
         if (!layerSurface->mapped()) {
             it->second->releaseContour();
-            ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
+            ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen, workspaceScene);
             return;
         }
 
         float alpha = layerSurface->alpha().getTotal();
         if (alpha < 0.001f) {
-            ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
+            ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen, workspaceScene);
             return;
         }
 
@@ -536,7 +536,7 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, Render::CRenderContext
         if (maskSource != CGlassLayerSurface::EMaskSource::CONTOUR)
             it->second->releaseContour();
         if (maskSource == CGlassLayerSurface::EMaskSource::NONE) {
-            ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
+            ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen, workspaceScene);
             return;
         }
 
@@ -560,7 +560,7 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, Render::CRenderContext
         // Original renderLayer: surface renders into the redirected temp FBO.
         // The suppression must wrap only this call: shouldBlur() runs inside it,
         // and the composite element must later see the real protocol state.
-        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
+        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen, workspaceScene);
         blurSuppression.reset();
 
         // Post-surface: restore currentFB, apply glass masked by temp FBO alpha, blit surface
@@ -572,7 +572,7 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, Render::CRenderContext
     }
 
     // Call the original renderLayer
-    ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
+    ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen, workspaceScene);
 }
 
 // ── Subsurface item glass support ────────────────────────────────────────────
@@ -778,12 +778,16 @@ void scheduleShadowsForWindowGlass() {
 
 // ── Hook target resolution ───────────────────────────────────────────────────
 
-// hyprland-git symbols (0.56.0-275-g5e04ae1f9). Itanium mangling encodes the
-// full signature, so a match is exactly the overload the hooks were written for.
+// Hyprland 0.57.0 symbols. Itanium mangling encodes the full signature, so a match is exactly the overload the hooks were written for.
 namespace HookSymbols {
     inline constexpr auto RENDER_LAYER =
         "_ZN6Render13IHyprRenderer11renderLayerERNS_14CRenderContextEN9Hyprutils6Memory14CSharedPointerIN7Desktop4View13CLayerSurfaceEEENS5_IN7Monitor8CMonitorEEERKNSt6chrono10time_"
-        "pointINSD_3_V212steady_clockENSD_8durationIlSt5ratioILl1ELl1000000000EEEEEEbb";
+        "pointINSD_3_V212steady_clockENSD_8durationIlSt5ratioILl1ELl1000000000EEEEEEbbb";
+    // The same overload as findFunctionsByName() reports it (nm --demangle=auto): the fallback accepts this exact signature only, so another arity is never hooked.
+    inline constexpr auto RENDER_LAYER_DEMANGLED =
+        "Render::IHyprRenderer::renderLayer(Render::CRenderContext&, Hyprutils::Memory::CSharedPointer<Desktop::View::CLayerSurface>, "
+        "Hyprutils::Memory::CSharedPointer<Monitor::CMonitor>, std::chrono::time_point<std::chrono::_V2::steady_clock, "
+        "std::chrono::duration<long, std::ratio<1l, 1000000000l> > > const&, bool, bool, bool)";
     inline constexpr auto RENDER_PASS_ADD = "_ZN6Render11CRenderPass3addEON9Hyprutils6Memory14CUniquePointerI12IPassElementEE";
 }
 
@@ -945,9 +949,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }
 
     // Hook renderLayer for layer surface glass support
-    // Fallback match for the overload Render::IHyprRenderer::renderLayer(CRenderContext&, PHLLS, PHLMONITOR, steady_tp, bool, bool)
+    // Fallback match for the overload Render::IHyprRenderer::renderLayer(CRenderContext&, PHLLS, PHLMONITOR, steady_tp, bool, bool, bool)
     void* const renderLayerAddress = resolveHyprlandFunction(HookSymbols::RENDER_LAYER, "renderLayer", [](const SFunctionMatch& match) {
-        return match.demangled.contains("renderLayer") && match.demangled.contains("CRenderContext") && match.demangled.contains("LayerSurface");
+        return match.demangled == HookSymbols::RENDER_LAYER_DEMANGLED;
     });
     const bool renderLayerFound = renderLayerAddress != nullptr;
     if (renderLayerFound) {

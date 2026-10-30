@@ -14,7 +14,14 @@ namespace RenderGuards {
 // mainFB alone is not a usable guard: it is truthy for the whole span of a
 // normal frame's begin()/end(), not just replays, so a bare mainFB check would
 // never see a foreign render as foreign.
+// A workspace capture runs the whole monitor pipeline (RPT_MONITOR, mainFB ==
+// currentFB) into an isolated buffer, so only m_renderingCapture identifies it;
+// glassing it would write our per-window caches and the x-ray snapshot from
+// content the live frame must not inherit.
 [[nodiscard]] inline bool isForeignRender(Render::CRenderContext& ctx) {
+    if (ctx.m_renderingCapture)
+        return true;
+
     const auto& renderData = ctx.m_data;
 
     if (renderData.mainFB && renderData.currentFB != renderData.mainFB)
