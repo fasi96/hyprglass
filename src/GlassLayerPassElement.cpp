@@ -15,7 +15,7 @@ std::vector<UP<IPassElement>> CGlassLayerPassElement::draw() {
         return {};
 
     if (m_data.layerState && m_data.layerState->getLayerSurface())
-        m_data.layerState->sampleAndRedirect(g_pHyprRenderer->m_renderData.pMonitor.lock(), m_data.alpha);
+        m_data.layerState->sampleAndRedirect(g_pHyprRenderer->m_renderData.pMonitor.lock(), m_data.alpha, m_data.xray);
 
     return {};
 }
@@ -52,7 +52,16 @@ bool CGlassLayerPassElement::needsLiveBlur() {
     // CRenderPass::render() asserts a bounding box for any element reporting
     // live blur ("No bounding box for an element with live blur is illegal",
     // Pass.cpp) and aborts the compositor if it's absent.
-    return paddedLogicalBox().has_value();
+    if (!paddedLogicalBox().has_value())
+        return false;
+
+    // An x-ray snapshot that already covers the layer is sampled instead of the
+    // frame. One that does not needs this hint: it un-occludes the background
+    // under opaque windows so the snapshot copy picks it up this frame.
+    // A contour field waiting to be built needs it too, for the same reason: the build
+    // wants every pixel of the layer redrawn, and nothing may occlude part of it.
+    return !(m_data.xray && m_data.layerState->xraySnapshotCovers(g_pHyprRenderer->m_renderData.pMonitor.lock())) ||
+           m_data.layerState->needsContourBuild();
 }
 
 bool CGlassLayerPassElement::needsPrecomputeBlur() {

@@ -1,4 +1,84 @@
 
+## [v0.11.0](https://github.com/Hyprnux/hyprglass/compare/v0.10.0...v0.11.0) - 2026-10-19
+
+### Bug Fixes
+
+* glass edges and refraction of app-drawn glass shapes follow the shape
+* a glass shader that fails to compile no longer stalls every frame (spotted by [@Eddie175](https://github.com/Eddie175))
+* layer glass no longer shifts for a frame when its blur region changes (spotted by [@Eddie175](https://github.com/Eddie175))
+* glass no longer stays stale after a quick burst of changes (spotted by [@Eddie175](https://github.com/Eddie175))
+* no stray glass from bars or glass layers over the lock screen (spotted by [@Eddie175](https://github.com/Eddie175))
+
+### Documentation
+
+* a user preset named like a built-in one extends it instead of replacing it
+
+### Features
+
+* layer glass can follow each shape an app draws (idea from [@Eddie175](https://github.com/Eddie175)'s True Glass)
+* glass frosts only where other windows are behind it (idea from [@Eddie175](https://github.com/Eddie175)'s True Glass)
+* bars and panels can have their own rounded glass shape (idea from [@Eddie175](https://github.com/Eddie175)'s True Glass)
+* optional light along the active window's glass edge (idea from [@Eddie175](https://github.com/Eddie175)'s True Glass)
+* lens-like glass edges that can mirror their surroundings (idea from [@Eddie175](https://github.com/Eddie175)'s True Glass)
+* set the glass edge thickness in pixels ([#92](https://github.com/Hyprnux/hyprglass/issues/92))
+
+### Performance Improvements
+
+* glass effects that are switched off cost nothing
+
+
+## [v0.10.0](https://github.com/Hyprnux/hyprglass/compare/v0.9.1...v0.10.0) - 2026-10-09
+
+### Bug Fixes
+
+* faint parts of bars and panels, like shadows, no longer disappear
+* steady, even grain on every window and theme ([#67](https://github.com/Hyprnux/hyprglass/issues/67))
+* window glass works even with shadows turned off
+* faster Hyprland startup with hyprglass loaded ([#88](https://github.com/Hyprnux/hyprglass/issues/88))
+* loading hyprglass twice no longer makes the two copies clash
+* glass works on rotated and flipped screens
+
+### CI/CD
+
+* releases are only built against a released Hyprland version
+
+### Chores
+
+* **release:** v0.10.0 [skip ci]
+
+### Documentation
+
+* what to do when Hyprland hangs at startup ([#88](https://github.com/Hyprnux/hyprglass/issues/88))
+
+### Features
+
+* set the layer mask threshold once for all layers ([#52](https://github.com/Hyprnux/hyprglass/issues/52))
+* optional grain on the glass for a frosted look ([#67](https://github.com/Hyprnux/hyprglass/issues/67))
+* soft glass edges can be set per layer ([#58](https://github.com/Hyprnux/hyprglass/issues/58))
+* glass follows rounded shapes requested by apps more closely
+* layer glass follows the soft edges of rounded panels ([#58](https://github.com/Hyprnux/hyprglass/issues/58))
+* x-ray can be set per preset and hides every window behind the glass ([#68](https://github.com/Hyprnux/hyprglass/issues/68))
+* add xray option to hide windows under the glass ([#68](https://github.com/Hyprnux/hyprglass/issues/68))
+* hyprglass pauses instead of crashing on a Hyprland it was not built for
+
+
+## [v0.9.1](https://github.com/Hyprnux/hyprglass/compare/v0.9.0...v0.9.1) - 2026-10-03
+
+### Bug Fixes
+
+* hyprglass loads on glibc 2.41+ instead of failing with "cannot enable executable stack" ([#86](https://github.com/Hyprnux/hyprglass/issues/86))
+* hyprctl hyprglass status tells whether glass is actually drawn, not just loaded
+* hyprctl plugin list shows the installed hyprglass version instead of 1.0.0
+
+### Chores
+
+* **release:** v0.9.1 [skip ci]
+
+### Documentation
+
+* give option ranges as typical values and describe vibrancy_darkness as the shader applies it
+
+
 ## [v0.9.0](https://github.com/Hyprnux/hyprglass/compare/v0.8.1...v0.9.0) - 2026-10-01
 
 ### Bug Fixes
@@ -19,6 +99,7 @@
 
 * drop blur margin warning (not always right, and hard to maintain)
 * **hyprpm:** install v0.8.1 on Hyprland 0.56.1/0.56.2 and v0.6.3 on 0.55.3
+* **release:** v0.9.0 [skip ci]
 
 ### Documentation
 

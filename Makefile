@@ -4,16 +4,30 @@ CXX ?= g++
 CC ?= gcc
 WAYLAND_SCANNER ?= wayland-scanner
 CXXFLAGS = -fPIC -g -O2 -std=c++23
-LDFLAGS = -shared
+# Never ask for an executable stack, whatever an object or the linker defaults to:
+# glibc 2.41+ refuses to load such a library.
+LDFLAGS = -shared -Wl,-z,noexecstack
 INCLUDES = $(shell pkg-config --cflags hyprland pixman-1 libdrm)
 LIBS = $(shell pkg-config --libs hyprland) -ldl
 
-ifeq ($(basename $(CXX)),g++)
+# Shown by `hyprctl plugin list`. Release builds pass HYPRGLASS_VERSION; other
+# builds describe their own checkout (never an enclosing repository), keeping
+# only characters safe in a C string. Changing it needs `make clean`.
+ifndef HYPRGLASS_VERSION
+HYPRGLASS_VERSION := $(shell [ -e .git ] && git describe --tags --dirty 2>/dev/null | sed 's/^v//' | tr -cd 'A-Za-z0-9._+-')
+endif
+ifeq ($(HYPRGLASS_VERSION),)
+HYPRGLASS_VERSION := dev
+endif
+CXXFLAGS += -DHYPRGLASS_VERSION='"$(HYPRGLASS_VERSION)"'
+
+# Keeps two loaded copies from sharing their globals. GCC only, whatever CXX calls it: clang has no such flag.
+ifneq ($(shell $(CXX) --version 2>/dev/null | grep -c 'Free Software Foundation'),0)
 	CXXFLAGS += --no-gnu-unique
 endif
 
 TARGET = hyprglass.so
-SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/BackgroundDamageObserver.cpp src/PluginConfig.cpp src/ShaderManager.cpp src/Diagnostics.cpp src/GlassSubsurfaceState.cpp src/GlassSubsurfacePassElement.cpp src/GlassSubsurfaceCompositeElement.cpp src/ItemHints.cpp src/LiquidSim.cpp
+SOURCES = src/main.cpp src/LoadGuard.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/BackgroundDamageObserver.cpp src/PluginConfig.cpp src/ShaderManager.cpp src/Diagnostics.cpp src/GlassSubsurfaceState.cpp src/GlassSubsurfacePassElement.cpp src/GlassSubsurfaceCompositeElement.cpp src/ItemHints.cpp src/GlassSnapshotElement.cpp src/Frost.cpp src/Contour.cpp src/LiquidSim.cpp
 OBJ = $(SOURCES:.cpp=.o)
 HEADERS = $(wildcard src/*.hpp)
 
@@ -61,7 +75,7 @@ $(ITEM_HELPER_DIR)/%.o: $(ITEM_HELPER_DIR)/%.c
 
 $(HELPER_SO): $(HELPER_OBJ)
 	@echo "Linking $(HELPER_SO)..."
-	@$(CC) -shared -fPIC -o $@ $(HELPER_OBJ) $(WAYLAND_SERVER_LIBS)
+	@$(CC) -shared -fPIC -Wl,-z,noexecstack -o $@ $(HELPER_OBJ) $(WAYLAND_SERVER_LIBS)
 
 # .incbin's path is relative to this Makefile's own working directory (the
 # repo root), the same base every other SOURCES path here is written against.

@@ -143,6 +143,31 @@ namespace {
         return root->findFirstPreorder([&surface](SP<CWLSurfaceResource> candidate) { return candidate == surface; }) != nullptr;
     }
 
+    // A contour layer's outline was traced from its own content: a commit that changes that
+    // content makes it stale. Unconditional like damageSelfSamplingWindow(): it has nothing to
+    // do with live resample, only with what the layer itself draws.
+    void invalidateContourOnOwnCommit(const SP<CWLSurfaceResource>& resource) {
+        if (!g_pGlobalState || g_pGlobalState->contourScratch.users <= 0)
+            return;
+
+        // same bit Hyprland tests: a commit without damage changes no pixel
+        if (!resource->m_current.updated.bits.damage)
+            return;
+
+        for (const auto& [_, state] : g_pGlobalState->layerSurfaces) {
+            if (!state || !state->holdsContour())
+                continue;
+
+            const auto layer = state->getLayerSurface();
+            if (!layer || !layer->m_mapped || !layer->wlSurface())
+                continue;
+
+            // the layer's own surfaces, not its popups: those are not in what the field was traced from
+            if (surfaceInTree(resource, layer->wlSurface()->resource()))
+                state->markContourContentChanged();
+        }
+    }
+
     void onSurfaceCommit(const SP<CWLSurfaceResource>& resource) {
         if (!g_pGlobalState || !resource)
             return;
@@ -288,6 +313,7 @@ namespace {
             try {
                 if (const auto surface = key.lock()) {
                     damageSelfSamplingWindow(surface);
+                    invalidateContourOnOwnCommit(surface);
                     onSurfaceCommit(surface);
                 }
             } catch (const std::exception& e) {
@@ -316,6 +342,60 @@ namespace {
 
         watchSurface(view->resource());
     }
+
+    void flushDeferredResamples() {
+        try {
+            if (!g_pGlobalState)
+                return;
+
+            const auto now = std::chrono::steady_clock::now();
+            for (const auto& decoration : g_pGlobalState->decorations) {
+                if (auto* glassDecoration = decoration.get())
+                    glassDecoration->flushDeferredResample(now);
+            }
+            for (const auto& [layer, state] : g_pGlobalState->layerSurfaces) {
+                if (state)
+                    state->flushDeferredResample(now);
+            }
+        } catch (const std::exception& e) {
+            reportListenerException(e.what());
+        } catch (...) {
+            reportListenerException("unknown exception");
+        }
+    }
+
+    // Removed from Hyprland's timer list, not just dropped: the list keeps its
+    // own reference, and the callback must not outlive the plugin.
+    void cancelDeferredResamples() {
+        auto& timer = g_pGlobalState->deferredResampleTimer;
+        if (!timer)
+            return;
+
+        timer->cancel();
+        if (g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(timer);
+        timer.reset();
+    }
+}
+
+void BackgroundDamageObserver::deferResample(std::chrono::steady_clock::time_point deadline) {
+    // a disarmed observer has nobody owing a mark, and PLUGIN_EXIT disarms it first
+    if (!g_pGlobalState || !g_pEventLoopManager || !isEnabled())
+        return;
+
+    const auto delay = std::max(deadline - std::chrono::steady_clock::now(), std::chrono::steady_clock::duration::zero());
+    auto&      timer = g_pGlobalState->deferredResampleTimer;
+    if (!timer) {
+        timer = makeShared<CEventLoopTimer>(delay, [](SP<CEventLoopTimer>, void*) { flushDeferredResamples(); }, nullptr);
+        g_pEventLoopManager->addTimer(timer);
+        return;
+    }
+
+    // armed for an earlier deadline: that firing re-arms for this one
+    if (timer->armed() && timer->leftUs() <= std::chrono::duration_cast<std::chrono::microseconds>(delay).count())
+        return;
+
+    timer->updateTimeout(delay);
 }
 
 void BackgroundDamageObserver::refreshEnabled() {
@@ -338,6 +418,7 @@ void BackgroundDamageObserver::setEnabled(bool enabled) {
     if (!enabled) {
         g_pGlobalState->observerListeners.clear();
         g_pGlobalState->watchedSurfaces.clear();
+        cancelDeferredResamples();
         return;
     }
 

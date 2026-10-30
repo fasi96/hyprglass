@@ -37,10 +37,24 @@ inline constexpr int MAX_PRESET_INHERITANCE_DEPTH = 8;
 
 // Layer glass masking strategy: how hyprglass decides which pixels of a layer
 // surface get the glass effect.
-enum class ELayerMaskMode { AUTO, ALPHA, REGION };
+enum class ELayerMaskMode { AUTO, ALPHA, REGION, CONTOUR };
 
-// Parses "auto"/"alpha"/"region"; nullopt for anything else.
+// Parses "auto"/"alpha"/"region"/"contour"; nullopt for anything else.
 [[nodiscard]] std::optional<ELayerMaskMode> parseLayerMaskMode(std::string_view value);
+
+// Fixed glass shape of a layer namespace: the layer box inset per side and
+// rounded by one corner radius, both in logical px. A negative inset reaches
+// past that layer edge, a negative radius makes a capsule.
+struct SLayerShape {
+    float insetTop    = 0.0f;
+    float insetRight  = 0.0f;
+    float insetBottom = 0.0f;
+    float insetLeft   = 0.0f;
+    float radius      = 0.0f;
+};
+
+// Parses "inset:radius" or "top:right:bottom:left:radius"; nullopt for anything else.
+[[nodiscard]] std::optional<SLayerShape> parseLayerShape(std::string_view value);
 
 // Instrumentation mode (plugin:hyprglass:debug:mode). Isolates the render-pass
 // cost from the GL pipeline cost for A/B measurement: hints_only skips all GL
@@ -129,6 +143,7 @@ inline constexpr auto PRESET_KEYWORD = "preset";
 // Overridable — global level
 inline constexpr auto BLUR_STRENGTH        = "plugin:hyprglass:blur_strength";
 inline constexpr auto BLUR_ITERATIONS      = "plugin:hyprglass:blur_iterations";
+inline constexpr auto NOISE_STRENGTH       = "plugin:hyprglass:noise_strength";
 inline constexpr auto REFRACTION_STRENGTH  = "plugin:hyprglass:refraction_strength";
 inline constexpr auto CHROMATIC_ABERRATION = "plugin:hyprglass:chromatic_aberration";
 inline constexpr auto FRESNEL_STRENGTH     = "plugin:hyprglass:fresnel_strength";
@@ -136,6 +151,9 @@ inline constexpr auto SPECULAR_STRENGTH    = "plugin:hyprglass:specular_strength
 inline constexpr auto SPECULAR_ANGLE       = "plugin:hyprglass:specular_angle";
 inline constexpr auto GLASS_OPACITY        = "plugin:hyprglass:glass_opacity";
 inline constexpr auto EDGE_THICKNESS       = "plugin:hyprglass:edge_thickness";
+inline constexpr auto EDGE_THICKNESS_PX    = "plugin:hyprglass:edge_thickness_px";
+inline constexpr auto EDGE_HEIGHT          = "plugin:hyprglass:edge_height";
+inline constexpr auto FRESNEL_REFLECTION   = "plugin:hyprglass:fresnel_reflection";
 inline constexpr auto TINT_COLOR           = "plugin:hyprglass:tint_color";
 inline constexpr auto LENS_DISTORTION      = "plugin:hyprglass:lens_distortion";
 inline constexpr auto BRIGHTNESS           = "plugin:hyprglass:brightness";
@@ -156,6 +174,11 @@ inline constexpr auto BEVEL_TINT            = "plugin:hyprglass:bevel_tint";
 inline constexpr auto BEVEL_ANGLE           = "plugin:hyprglass:bevel_angle";
 inline constexpr auto BEVEL_SHADOW          = "plugin:hyprglass:bevel_shadow";
 inline constexpr auto SELF_SAMPLE           = "plugin:hyprglass:self_sample";
+inline constexpr auto XRAY                  = "plugin:hyprglass:xray";
+inline constexpr auto FOCUS_LIGHT           = "plugin:hyprglass:focus_light";
+inline constexpr auto FOCUS_LIGHT_COLOR     = "plugin:hyprglass:focus_light_color";
+inline constexpr auto FROST                 = "plugin:hyprglass:frost";
+inline constexpr auto FROST_BLUR            = "plugin:hyprglass:frost_blur";
 
 // Layer surface support
 inline constexpr auto LAYERS_ENABLED            = "plugin:hyprglass:layers:enabled";
@@ -163,6 +186,7 @@ inline constexpr auto LAYERS_NAMESPACES         = "plugin:hyprglass:layers:names
 inline constexpr auto LAYERS_EXCLUDE_NAMESPACES = "plugin:hyprglass:layers:exclude_namespaces";
 inline constexpr auto LAYERS_PRESET             = "plugin:hyprglass:layers:preset";
 inline constexpr auto LAYERS_NAMESPACE_PRESETS          = "plugin:hyprglass:layers:namespace_presets";
+inline constexpr auto LAYERS_MASK_THRESHOLD             = "plugin:hyprglass:layers:mask_threshold";
 inline constexpr auto LAYERS_NAMESPACE_MASK_THRESHOLDS  = "plugin:hyprglass:layers:namespace_mask_thresholds";
 inline constexpr auto LAYERS_NAMESPACE_LIVE_RESAMPLE    = "plugin:hyprglass:layers:namespace_live_resample";
 inline constexpr auto LAYERS_LIVE_RESAMPLE              = "plugin:hyprglass:layers:live_resample";
@@ -170,6 +194,10 @@ inline constexpr auto LAYERS_LIVE_RESAMPLE_FPS          = "plugin:hyprglass:laye
 inline constexpr auto LAYERS_FORCE_LIVE_RESAMPLE        = "plugin:hyprglass:layers:force_live_resample";
 inline constexpr auto LAYERS_MASK_MODE                  = "plugin:hyprglass:layers:mask_mode";
 inline constexpr auto LAYERS_NAMESPACE_MASK_MODES       = "plugin:hyprglass:layers:namespace_mask_modes";
+// Alpha mask only: alpha range above mask_threshold over which layer glass fades in; 0 keeps the hard mask.
+inline constexpr auto LAYERS_MASK_FEATHER               = "plugin:hyprglass:layers:mask_feather";
+inline constexpr auto LAYERS_NAMESPACE_MASK_FEATHERS    = "plugin:hyprglass:layers:namespace_mask_feathers";
+inline constexpr auto LAYERS_NAMESPACE_SHAPES           = "plugin:hyprglass:layers:namespace_shapes";
 inline constexpr auto LAYERS_MANAGE_BLUR                = "plugin:hyprglass:layers:manage_blur";
 
 // Subsurface item glass support (see GlassSubsurfaceState).
@@ -191,6 +219,7 @@ inline constexpr auto WINDOWS_LIVE_RESAMPLE_FPS = "plugin:hyprglass:windows:live
 // Overridable — dark theme overrides
 inline constexpr auto DARK_BLUR_STRENGTH        = "plugin:hyprglass:dark:blur_strength";
 inline constexpr auto DARK_BLUR_ITERATIONS      = "plugin:hyprglass:dark:blur_iterations";
+inline constexpr auto DARK_NOISE_STRENGTH       = "plugin:hyprglass:dark:noise_strength";
 inline constexpr auto DARK_REFRACTION_STRENGTH  = "plugin:hyprglass:dark:refraction_strength";
 inline constexpr auto DARK_CHROMATIC_ABERRATION = "plugin:hyprglass:dark:chromatic_aberration";
 inline constexpr auto DARK_FRESNEL_STRENGTH     = "plugin:hyprglass:dark:fresnel_strength";
@@ -198,6 +227,9 @@ inline constexpr auto DARK_SPECULAR_STRENGTH    = "plugin:hyprglass:dark:specula
 inline constexpr auto DARK_SPECULAR_ANGLE       = "plugin:hyprglass:dark:specular_angle";
 inline constexpr auto DARK_GLASS_OPACITY        = "plugin:hyprglass:dark:glass_opacity";
 inline constexpr auto DARK_EDGE_THICKNESS       = "plugin:hyprglass:dark:edge_thickness";
+inline constexpr auto DARK_EDGE_THICKNESS_PX    = "plugin:hyprglass:dark:edge_thickness_px";
+inline constexpr auto DARK_EDGE_HEIGHT          = "plugin:hyprglass:dark:edge_height";
+inline constexpr auto DARK_FRESNEL_REFLECTION   = "plugin:hyprglass:dark:fresnel_reflection";
 inline constexpr auto DARK_TINT_COLOR           = "plugin:hyprglass:dark:tint_color";
 inline constexpr auto DARK_LENS_DISTORTION      = "plugin:hyprglass:dark:lens_distortion";
 inline constexpr auto DARK_BRIGHTNESS           = "plugin:hyprglass:dark:brightness";
@@ -218,10 +250,16 @@ inline constexpr auto DARK_BEVEL_TINT           = "plugin:hyprglass:dark:bevel_t
 inline constexpr auto DARK_BEVEL_ANGLE          = "plugin:hyprglass:dark:bevel_angle";
 inline constexpr auto DARK_BEVEL_SHADOW         = "plugin:hyprglass:dark:bevel_shadow";
 inline constexpr auto DARK_SELF_SAMPLE          = "plugin:hyprglass:dark:self_sample";
+inline constexpr auto DARK_XRAY                 = "plugin:hyprglass:dark:xray";
+inline constexpr auto DARK_FOCUS_LIGHT          = "plugin:hyprglass:dark:focus_light";
+inline constexpr auto DARK_FOCUS_LIGHT_COLOR    = "plugin:hyprglass:dark:focus_light_color";
+inline constexpr auto DARK_FROST                = "plugin:hyprglass:dark:frost";
+inline constexpr auto DARK_FROST_BLUR           = "plugin:hyprglass:dark:frost_blur";
 
 // Overridable — light theme overrides
 inline constexpr auto LIGHT_BLUR_STRENGTH        = "plugin:hyprglass:light:blur_strength";
 inline constexpr auto LIGHT_BLUR_ITERATIONS      = "plugin:hyprglass:light:blur_iterations";
+inline constexpr auto LIGHT_NOISE_STRENGTH       = "plugin:hyprglass:light:noise_strength";
 inline constexpr auto LIGHT_REFRACTION_STRENGTH  = "plugin:hyprglass:light:refraction_strength";
 inline constexpr auto LIGHT_CHROMATIC_ABERRATION = "plugin:hyprglass:light:chromatic_aberration";
 inline constexpr auto LIGHT_FRESNEL_STRENGTH     = "plugin:hyprglass:light:fresnel_strength";
@@ -229,6 +267,9 @@ inline constexpr auto LIGHT_SPECULAR_STRENGTH    = "plugin:hyprglass:light:specu
 inline constexpr auto LIGHT_SPECULAR_ANGLE       = "plugin:hyprglass:light:specular_angle";
 inline constexpr auto LIGHT_GLASS_OPACITY        = "plugin:hyprglass:light:glass_opacity";
 inline constexpr auto LIGHT_EDGE_THICKNESS       = "plugin:hyprglass:light:edge_thickness";
+inline constexpr auto LIGHT_EDGE_THICKNESS_PX    = "plugin:hyprglass:light:edge_thickness_px";
+inline constexpr auto LIGHT_EDGE_HEIGHT          = "plugin:hyprglass:light:edge_height";
+inline constexpr auto LIGHT_FRESNEL_REFLECTION   = "plugin:hyprglass:light:fresnel_reflection";
 inline constexpr auto LIGHT_TINT_COLOR           = "plugin:hyprglass:light:tint_color";
 inline constexpr auto LIGHT_LENS_DISTORTION      = "plugin:hyprglass:light:lens_distortion";
 inline constexpr auto LIGHT_BRIGHTNESS           = "plugin:hyprglass:light:brightness";
@@ -249,6 +290,11 @@ inline constexpr auto LIGHT_BEVEL_TINT           = "plugin:hyprglass:light:bevel
 inline constexpr auto LIGHT_BEVEL_ANGLE          = "plugin:hyprglass:light:bevel_angle";
 inline constexpr auto LIGHT_BEVEL_SHADOW         = "plugin:hyprglass:light:bevel_shadow";
 inline constexpr auto LIGHT_SELF_SAMPLE          = "plugin:hyprglass:light:self_sample";
+inline constexpr auto LIGHT_XRAY                 = "plugin:hyprglass:light:xray";
+inline constexpr auto LIGHT_FOCUS_LIGHT          = "plugin:hyprglass:light:focus_light";
+inline constexpr auto LIGHT_FOCUS_LIGHT_COLOR    = "plugin:hyprglass:light:focus_light_color";
+inline constexpr auto LIGHT_FROST               = "plugin:hyprglass:light:frost";
+inline constexpr auto LIGHT_FROST_BLUR          = "plugin:hyprglass:light:frost_blur";
 
 } // namespace ConfigKeys
 
@@ -256,6 +302,7 @@ inline constexpr auto LIGHT_SELF_SAMPLE          = "plugin:hyprglass:light:self_
 struct SOverridableConfig {
     Hyprlang::FLOAT* const* blurStrength        = nullptr;
     Hyprlang::INT* const*   blurIterations      = nullptr;
+    Hyprlang::FLOAT* const* noiseStrength       = nullptr;
     Hyprlang::FLOAT* const* refractionStrength  = nullptr;
     Hyprlang::FLOAT* const* chromaticAberration = nullptr;
     Hyprlang::FLOAT* const* fresnelStrength     = nullptr;
@@ -263,6 +310,9 @@ struct SOverridableConfig {
     Hyprlang::FLOAT* const* specularAngle       = nullptr;
     Hyprlang::FLOAT* const* glassOpacity        = nullptr;
     Hyprlang::FLOAT* const* edgeThickness       = nullptr;
+    Hyprlang::FLOAT* const* edgeThicknessPx     = nullptr;
+    Hyprlang::FLOAT* const* edgeHeight          = nullptr;
+    Hyprlang::FLOAT* const* fresnelReflection   = nullptr;
     Hyprlang::INT* const*   tintColor           = nullptr;
     Hyprlang::FLOAT* const* lensDistortion      = nullptr;
     Hyprlang::FLOAT* const* brightness          = nullptr;
@@ -283,12 +333,18 @@ struct SOverridableConfig {
     Hyprlang::FLOAT* const* bevelAngle          = nullptr;
     Hyprlang::FLOAT* const* bevelShadow         = nullptr;
     Hyprlang::FLOAT* const* selfSample          = nullptr;
+    Hyprlang::INT* const*   xray                = nullptr;
+    Hyprlang::FLOAT* const* focusLight          = nullptr;
+    Hyprlang::INT* const*   focusLightColor     = nullptr;
+    Hyprlang::FLOAT* const* frost               = nullptr;
+    Hyprlang::FLOAT* const* frostBlur           = nullptr;
 };
 
 // Plain values for a user-defined preset layer (all sentinel = not set → inherit)
 struct SPresetValues {
     float   blurStrength       = static_cast<float>(SENTINEL_FLOAT);
     int64_t blurIterations     = SENTINEL_INT;
+    float   noiseStrength      = static_cast<float>(SENTINEL_FLOAT);
     float   refractionStrength = static_cast<float>(SENTINEL_FLOAT);
     float   chromaticAberration = static_cast<float>(SENTINEL_FLOAT);
     float   fresnelStrength    = static_cast<float>(SENTINEL_FLOAT);
@@ -296,6 +352,9 @@ struct SPresetValues {
     float   specularAngle      = static_cast<float>(SENTINEL_FLOAT);
     float   glassOpacity       = static_cast<float>(SENTINEL_FLOAT);
     float   edgeThickness      = static_cast<float>(SENTINEL_FLOAT);
+    float   edgeThicknessPx    = static_cast<float>(SENTINEL_FLOAT);
+    float   edgeHeight         = static_cast<float>(SENTINEL_FLOAT);
+    float   fresnelReflection  = static_cast<float>(SENTINEL_FLOAT);
     int64_t tintColor          = SENTINEL_INT;
     float   lensDistortion     = static_cast<float>(SENTINEL_FLOAT);
     float   brightness         = static_cast<float>(SENTINEL_FLOAT);
@@ -316,6 +375,11 @@ struct SPresetValues {
     float   bevelAngle         = static_cast<float>(SENTINEL_FLOAT);
     float   bevelShadow        = static_cast<float>(SENTINEL_FLOAT);
     float   selfSample         = static_cast<float>(SENTINEL_FLOAT);
+    int64_t xray               = SENTINEL_INT;
+    float   focusLight         = static_cast<float>(SENTINEL_FLOAT);
+    int64_t focusLightColor    = SENTINEL_INT;
+    float   frost              = static_cast<float>(SENTINEL_FLOAT);
+    float   frostBlur          = static_cast<float>(SENTINEL_FLOAT);
 };
 
 struct SCustomPreset {
@@ -346,6 +410,26 @@ inline std::string_view readStringConfig(const StringConfigPtr& ptr) {
     }
 
     return {};
+}
+
+// A Hyprland key whose storage is a bool under the Lua config and an INTEGER
+// under legacy .conf: read through its reported type, never as a bare int64.
+struct IntegerConfigPtr {
+    void* const*          dataptr = nullptr;
+    const std::type_info* type    = nullptr;
+};
+
+inline Config::INTEGER readIntegerConfig(const IntegerConfigPtr& ptr) {
+    if (!ptr.dataptr || !ptr.type)
+        return 0;
+
+    if (*ptr.type == typeid(bool))
+        return **reinterpret_cast<const bool* const*>(ptr.dataptr);
+
+    if (*ptr.type == typeid(Config::INTEGER))
+        return **reinterpret_cast<const Config::INTEGER* const*>(ptr.dataptr);
+
+    return 0;
 }
 
 struct SPluginConfig {
@@ -404,6 +488,11 @@ struct SPluginConfig {
     Hyprlang::FLOAT* const* liquidGlints = nullptr;
     Hyprlang::FLOAT* const* liquidSteps = nullptr;
     Hyprlang::FLOAT* const* liquidCell = nullptr;
+    // Hyprland's render:xp_mode: no wallpaper or bottom layers are drawn, so
+    // there is nothing for x-ray to show.
+    IntegerConfigPtr      xpMode;
+    // Hyprland's animations:enabled: off, the focus light switches without a fade.
+    IntegerConfigPtr      animationsEnabled;
     StringConfigPtr      defaultTheme;
     StringConfigPtr      defaultPreset;
 
@@ -416,6 +505,7 @@ struct SPluginConfig {
     StringConfigPtr       layersExcludeNamespaces;
     StringConfigPtr       layersPreset;
     StringConfigPtr       layersNamespacePresets;
+    Hyprlang::FLOAT* const* layersMaskThreshold          = nullptr;
     StringConfigPtr       layersNamespaceMaskThresholds;
     StringConfigPtr       layersNamespaceLiveResample;
     Hyprlang::INT* const* layersLiveResample             = nullptr;
@@ -423,6 +513,9 @@ struct SPluginConfig {
     Hyprlang::INT* const* layersForceLiveResample        = nullptr;
     StringConfigPtr       layersMaskMode;
     StringConfigPtr       layersNamespaceMaskModes;
+    Hyprlang::FLOAT* const* layersMaskFeather            = nullptr;
+    StringConfigPtr       layersNamespaceMaskFeathers;
+    StringConfigPtr       layersNamespaceShapes;
     Hyprlang::INT* const* layersManageBlur               = nullptr;
 
     Hyprlang::INT* const*   subsurfacesEnabled = nullptr;

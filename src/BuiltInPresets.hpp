@@ -29,12 +29,16 @@ inline constexpr SThemeDefaults LIGHT_THEME_DEFAULTS = {1.12f, 0.92f, 0.85f, 0.1
 namespace GlobalDefaults {
     inline constexpr float   BLUR_STRENGTH        = 2.0f;
     inline constexpr int64_t BLUR_ITERATIONS      = 3;
+    inline constexpr float   NOISE_STRENGTH       = 0.0f;
     inline constexpr float   REFRACTION_STRENGTH  = 0.6f;
     inline constexpr float   CHROMATIC_ABERRATION = 0.5f;
     inline constexpr float   FRESNEL_STRENGTH     = 0.6f;
     inline constexpr float   SPECULAR_STRENGTH    = 0.8f;
     inline constexpr float   GLASS_OPACITY        = 1.0f;
     inline constexpr float   EDGE_THICKNESS       = 0.06f;
+    inline constexpr float   EDGE_THICKNESS_PX    = 0.0f; // 0 = use the relative EDGE_THICKNESS
+    inline constexpr float   EDGE_HEIGHT          = 0.0f; // 0 = the soft edge, no lens
+    inline constexpr float   FRESNEL_REFLECTION   = 0.0f;
     inline constexpr int64_t TINT_COLOR           = 0x8899aa22;
     inline constexpr float   LENS_DISTORTION      = 0.5f;
     inline constexpr float   REFRACTION_FLOW      = 0.0f;
@@ -49,6 +53,11 @@ namespace GlobalDefaults {
     inline constexpr float   BEVEL_SHADOW         = 0.0f;
     inline constexpr float   SPECULAR_ANGLE       = 0.0f;
     inline constexpr float   SELF_SAMPLE          = 0.0f;
+    inline constexpr int64_t XRAY                 = 0;
+    inline constexpr float   FOCUS_LIGHT          = 0.0f; // 0 = no light on the active window
+    inline constexpr int64_t FOCUS_LIGHT_COLOR    = 0xffffff00;
+    inline constexpr float   FROST                = 0.0f; // 0 = no frost behind windows
+    inline constexpr float   FROST_BLUR           = 3.0f; // extra blur, in blur_strength units
 } // namespace GlobalDefaults
 
 // ── Built-in presets ─────────────────────────────────────────────────────────
@@ -108,6 +117,7 @@ inline SCustomPreset makeClear() {
     p.name = "clear";
 
     p.shared.blurStrength        = 0.0f;
+    p.shared.noiseStrength       = 0.0f;
     p.shared.refractionStrength  = 0.3f;
     p.shared.chromaticAberration = 0.2f;
     p.shared.fresnelStrength     = 0.3f;

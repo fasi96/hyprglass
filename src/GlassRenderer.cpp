@@ -2,10 +2,12 @@
 #include "GlassRenderer.hpp"
 #include "BuiltInPresets.hpp"
 #include "Diagnostics.hpp"
+#include "Frost.hpp"
 #include "Globals.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <GLES3/gl32.h>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
@@ -24,9 +26,9 @@ GLuint framebufferId(const SP<Render::IFramebuffer>& framebuffer) {
     return fbId(framebuffer);
 }
 
-static void uploadThemeUniforms(const SResolveContext& ctx) {
-    const auto& uniforms = g_pGlobalState->shaderManager.glassUniforms;
-    const auto& glassShader = g_pGlobalState->shaderManager.glassShader;
+static void uploadThemeUniforms(const SResolveContext& ctx, const SGlassProgram& program) {
+    const auto& uniforms    = program.uniforms;
+    const auto& glassShader = program.shader;
     const auto& defaults = ctx.isDark ? DARK_THEME_DEFAULTS : LIGHT_THEME_DEFAULTS;
 
     glassShader->setUniformFloat(SHADER_BRIGHTNESS, resolvePresetFloat(ctx, &SPresetValues::brightness, &SOverridableConfig::brightness, defaults.brightness));
@@ -63,21 +65,37 @@ SSampleMap sampleMapFor(const CBox& box, int downscale) {
     return map;
 }
 
-bool sampleRegionCovered(const CBox& box, const SP<Render::IFramebuffer>& source, const CRegion& damage) {
-    if (!source)
+bool damageCoversBox(const CBox& box, const SP<Render::IFramebuffer>& framebuffer, const CRegion& damage,
+                     const PHLMONITOR& monitor) {
+    if (!framebuffer)
         return false;
 
-    // The exact source rect the blit reads, clipped like the blit itself: Hyprland
-    // clips element damage to the monitor, and the clipped-off padding is cleared.
-    const auto   map = sampleMapFor(box, 1);
-    const double x1  = std::max(map.srcX0, 0);
-    const double y1  = std::max(map.srcY0, 0);
-    const double x2  = std::min(map.srcX1, static_cast<int>(source->m_size.x));
-    const double y2  = std::min(map.srcY1, static_cast<int>(source->m_size.y));
+    // Hyprland clips element damage to the monitor, and what a blit reads beyond the
+    // framebuffer is cleared padding: neither can be missing from the damage.
+    const double x1 = std::max(box.x, 0.0);
+    const double y1 = std::max(box.y, 0.0);
+    const double x2 = std::min(box.x + box.w, framebuffer->m_size.x);
+    const double y2 = std::min(box.y + box.h, framebuffer->m_size.y);
     if (x2 <= x1 || y2 <= y1)
         return true;
 
-    return CRegion(CBox{x1, y1, x2 - x1, y2 - y1}).subtract(damage).empty();
+    // Render damage is in the rotated monitor space while the box is in unrotated
+    // framebuffer pixels: transform it like Hyprland does for the output damage.
+    CRegion framebufferDamage = damage.copy();
+    if (monitor)
+        framebufferDamage.transform(Math::wlTransformToHyprutils(Math::invertTransform(monitor->m_transform)),
+                                    monitor->m_transformedSize.x, monitor->m_transformedSize.y);
+
+    return CRegion(CBox{x1, y1, x2 - x1, y2 - y1}).subtract(framebufferDamage).empty();
+}
+
+bool sampleRegionCovered(const CBox& box, const SP<Render::IFramebuffer>& source, const CRegion& damage,
+                         const PHLMONITOR& monitor) {
+    // The exact source rect the blit reads.
+    const auto map = sampleMapFor(box, 1);
+    return damageCoversBox(CBox{static_cast<double>(map.srcX0), static_cast<double>(map.srcY0), static_cast<double>(map.srcX1 - map.srcX0),
+                                static_cast<double>(map.srcY1 - map.srcY0)},
+                           source, damage, monitor);
 }
 
 SFoldedBlur foldBlurPasses(float radius, int iterations) noexcept {
@@ -334,7 +352,7 @@ void blendOwnContent(SP<Render::IFramebuffer>& sampleFramebuffer, PHLWINDOW wind
 }
 
 void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
-                    SP<Render::IFramebuffer> callerFramebuffer) {
+                    SP<Render::IFramebuffer> callerFramebuffer, SP<Render::IFramebuffer>* temporaryFramebuffer) {
     auto& shaderManager = g_pGlobalState->shaderManager;
     if (!sampleFramebuffer || !callerFramebuffer || radius <= 0.0f || iterations <= 0 || !shaderManager.isInitialized())
         return;
@@ -348,13 +366,17 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
     int width  = static_cast<int>(sampleFramebuffer->m_size.x);
     int height = static_cast<int>(sampleFramebuffer->m_size.y);
 
-    auto& blurTempFramebuffer = g_pGlobalState->blurTempFramebuffer;
+    auto& blurTempFramebuffer = temporaryFramebuffer ? *temporaryFramebuffer : g_pGlobalState->blurTempFramebuffer;
     if (!blurTempFramebuffer)
         blurTempFramebuffer = g_pHyprRenderer->createFB("hyprglass-blur-temp");
 
     if (blurTempFramebuffer->m_size.x != width || blurTempFramebuffer->m_size.y != height ||
         blurTempFramebuffer->m_drmFormat != sampleFramebuffer->m_drmFormat)
         blurTempFramebuffer->alloc(width, height, sampleFramebuffer->m_drmFormat);
+
+    // An allocation that failed (out of GPU memory) leaves no texture to ping-pong through.
+    if (!blurTempFramebuffer->isAllocated() || !blurTempFramebuffer->getTexture() || !sampleFramebuffer->getTexture())
+        return;
 
     // Fullscreen quad projection: maps VAO positions [0,1] to clip space [-1,1]
     static constexpr std::array<float, 9> FULLSCREEN_PROJECTION = {
@@ -412,11 +434,75 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
         static_cast<int>(callerFramebuffer->m_size.y));
 }
 
+bool buildFrostCopy(const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy, SP<Render::IFramebuffer>& temporary,
+                    float radius, int iterations, const SP<Render::IFramebuffer>& callerFramebuffer) {
+    if (!sample || !callerFramebuffer || !g_pGlobalState->shaderManager.isInitialized())
+        return false;
+
+    const int sampleWidth  = static_cast<int>(sample->m_size.x);
+    const int sampleHeight = static_cast<int>(sample->m_size.y);
+    const int width        = std::max(1, sampleWidth / 2);
+    const int height       = std::max(1, sampleHeight / 2);
+    if (sampleWidth < 1 || sampleHeight < 1)
+        return false;
+
+    if (!copy)
+        copy = g_pHyprRenderer->createFB("hyprglass-frost");
+    if (copy->m_size.x != width || copy->m_size.y != height || copy->m_drmFormat != sample->m_drmFormat)
+        copy->alloc(width, height, sample->m_drmFormat);
+
+    // Dropped, so the caller sees a missing copy and retries rather than drawing a texture-less one.
+    if (!copy->isAllocated() || !copy->getTexture()) {
+        copy.reset();
+        return false;
+    }
+
+    // same as the sample blit: the render pass's damage scissor would clip it
+    g_pHyprOpenGL->setCapStatus(GL_SCISSOR_TEST, false);
+    if (glIsEnabled(GL_SCISSOR_TEST)) {
+        glDisable(GL_SCISSOR_TEST);
+        Diagnostics::recordStateDesync("scissor on before the frost blit");
+    }
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbId(sample));
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbId(copy));
+    glBlitFramebuffer(0, 0, sampleWidth, sampleHeight, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+    blurBackground(copy, radius, iterations, callerFramebuffer, &temporary);
+
+    // blurBackground() returns without binding when it has nothing to blur
+    glBindFramebuffer(GL_FRAMEBUFFER, fbId(callerFramebuffer));
+    return true;
+}
+
+// The optional effects (ShaderVariants.hpp) this draw's resolved settings turn on.
+// Must stay GLASS_FEATURE_NONE whenever every effect is at its off value, so the
+// draw runs the default program.
+static GlassFeatureMask glassFeaturesFor(float edgeHeight, float focusLight, bool frost, bool contour) {
+    GlassFeatureMask features = GLASS_FEATURE_NONE;
+    if (edgeHeight > 0.0f)
+        features |= GLASS_FEATURE_LENS_EDGE;
+    if (focusLight > 0.0f)
+        features |= GLASS_FEATURE_FOCUS_LIGHT;
+    if (frost)
+        features |= GLASS_FEATURE_FROST;
+    if (contour)
+        features |= GLASS_FEATURE_CONTOUR;
+    return features;
+}
+
+static constexpr int FROST_TEXTURE_UNIT   = 2; // 0 is the sample, 1 the layer surface mask
+static constexpr int CONTOUR_TEXTURE_UNIT = 3; // layers only, so never at the same time as frost
+// Liquid Touch (windows only): its own units, clear of frost, which a window can have at the same time
+static constexpr int LIQUID_DYE_UNIT  = 4;
+static constexpr int LIQUID_VEL_UNIT  = 5;
+static constexpr int LIQUID_DISP_UNIT = 6;
+
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, const std::array<float, 4>& radii, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
-                       const SMaskInfo* mask) {
+                       const SMaskInfo* mask, float focusLight, const SFrostInput* frost) {
     if (!sampleFramebuffer || !targetFramebuffer)
         return;
 
@@ -425,8 +511,21 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     if (const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock())
         Diagnostics::recordGlassPixels(monitor->m_id, rawBox.w * rawBox.h);
 
-    auto& shaderManager  = g_pGlobalState->shaderManager;
-    const auto& uniforms = shaderManager.glassUniforms;
+    const float edgeHeightValue =
+        std::min(resolvePresetFloat(resolveContext, &SPresetValues::edgeHeight, &SOverridableConfig::edgeHeight), EDGE_HEIGHT_MAX);
+    // windows only: a masked draw is a layer or an item
+    const float focusLightValue = !mask && focusLight > 0.0f ? std::min(focusLight, 1.0f) : 0.0f;
+    // windows only, like the light
+    const bool  frosted         = !mask && frost && frost->copy && frost->copy->getTexture() && frost->amount > Frost::MINIMUM_AMOUNT;
+    // layers only too, and only when the layer has a field to draw
+    const bool  wantsContour    = mask && mask->contourTextureId != 0 && mask->contourReferencePx > 0.0f;
+    const auto  features        = glassFeaturesFor(edgeHeightValue, focusLightValue, frosted, wantsContour);
+
+    // Before any GL binding: a variant's first use compiles it, which rebinds the VAO and array buffer.
+    const auto& program  = g_pGlobalState->shaderManager.glassProgram(features);
+    const auto& uniforms = program.uniforms;
+    // A variant that failed to compile falls back to the default program: the layer then keeps its rectangle.
+    const bool  contoured = wantsContour && (program.features & GLASS_FEATURE_CONTOUR);
 
     const auto transform = Math::wlTransformToHyprutils(
         Math::invertTransform(g_pHyprRenderer->m_renderData.pMonitor->m_transform));
@@ -440,6 +539,18 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     glActiveTexture(GL_TEXTURE0);
     texture->bind();
 
+    if (frosted) {
+        glActiveTexture(GL_TEXTURE0 + FROST_TEXTURE_UNIT);
+        frost->copy->getTexture()->bind();
+        glActiveTexture(GL_TEXTURE0);
+    }
+
+    if (contoured) {
+        glActiveTexture(GL_TEXTURE0 + CONTOUR_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, mask->contourTextureId);
+        glActiveTexture(GL_TEXTURE0);
+    }
+
     // Layers only: bind the temp FBO texture (rendered surface) on texture unit 1.
     // The shader samples it to mask glass to visible content and composite surface on top.
     // Windows pass mask=nullptr so this block is skipped.
@@ -449,7 +560,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         glActiveTexture(GL_TEXTURE0);
     }
 
-    auto shader = g_pHyprOpenGL->useShader(shaderManager.glassShader);
+    auto shader = g_pHyprOpenGL->useShader(program.shader);
 
     shader->setUniformMatrix3fv(SHADER_PROJ, 1, GL_FALSE, glMatrix.getMatrix());
     shader->setUniformInt(SHADER_TEX, 0);
@@ -461,19 +572,47 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     // a rounding_power window rule bypasses Hyprland's [2, 10] clamp; <= 0 is NaN in the SDF
     const float safeRoundingPower = std::max(roundingPower, 1.0f);
 
+    // The glass shape within the drawn box (see SMaskInfo::glassBoxSizePx): only
+    // subsurface items and shaped layers set one; the sentinel (negative) means the whole box.
+    // Bezel, lens and refraction are sized and centred on it, not on the drawn box.
+    Vector2D glassBoxOffsetPx{0.0, 0.0};
+    Vector2D glassBoxSizePx = fullSize;
+    if (mask && !contoured && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
+        glassBoxOffsetPx = mask->glassBoxOffsetPx;
+        glassBoxSizePx   = mask->glassBoxSizePx;
+    }
+    glUniform2f(uniforms.glassBoxOffsetPx, static_cast<float>(glassBoxOffsetPx.x), static_cast<float>(glassBoxOffsetPx.y));
+    glUniform2f(uniforms.glassBoxSizePx, static_cast<float>(glassBoxSizePx.x), static_cast<float>(glassBoxSizePx.y));
+    // x / x is exactly 1 and 0 / x exactly 0, so the whole-box case maps uv to itself bit for bit
+    glUniform2f(uniforms.glassUVScale,
+        static_cast<float>(glassBoxSizePx.x > 0.0 ? fullSize.x / glassBoxSizePx.x : 1.0),
+        static_cast<float>(glassBoxSizePx.y > 0.0 ? fullSize.y / glassBoxSizePx.y : 1.0));
+    glUniform2f(uniforms.glassUVOffset,
+        static_cast<float>(glassBoxSizePx.x > 0.0 ? glassBoxOffsetPx.x / glassBoxSizePx.x : 0.0),
+        static_cast<float>(glassBoxSizePx.y > 0.0 ? glassBoxOffsetPx.y / glassBoxSizePx.y : 0.0));
+
     // Reciprocals computed once per draw instead of once per pixel in the shader.
-    const float minDimensionPx = static_cast<float>(std::min(fullSize.x, fullSize.y));
+    // a contoured layer's edge is measured against a card's size, not the layer's
+    const float minDimensionPx = contoured ? mask->contourReferencePx : static_cast<float>(std::min(glassBoxSizePx.x, glassBoxSizePx.y));
     glUniform2f(uniforms.invFullSize,
         1.0f / static_cast<float>(fullSize.x), 1.0f / static_cast<float>(fullSize.y));
     glUniform1f(uniforms.invRoundingPower, 1.0f / safeRoundingPower);
 
-    const float edgeThicknessValue = resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness);
+    const auto  monitor            = g_pHyprRenderer->m_renderData.pMonitor.lock();
+    const float monitorScale       = monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f;
+    const float edgeThicknessValue = effectiveEdgeThickness(
+        resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness),
+        resolvePresetFloat(resolveContext, &SPresetValues::edgeThicknessPx, &SOverridableConfig::edgeThicknessPx),
+        monitorScale, minDimensionPx);
     const float lensDistortionValue = resolvePresetFloat(resolveContext, &SPresetValues::lensDistortion, &SOverridableConfig::lensDistortion);
     // Epsilon guard matches the shader's own degenerate-size behaviour (bezelWidthPx == 0 would divide by zero).
     glUniform1f(uniforms.invBezelWidthPx, 1.0f / std::max(edgeThicknessValue * minDimensionPx, 1e-4f));
     glUniform1f(uniforms.lensMaxPx, lensDistortionValue * minDimensionPx * 0.006f);
 
-    glUniform1f(uniforms.refractionStrength,  resolvePresetFloat(resolveContext, &SPresetValues::refractionStrength, &SOverridableConfig::refractionStrength));
+    // inf * 0 at a square lens corner would give NaN offsets
+    const float refractionStrengthValue = resolvePresetFloat(resolveContext, &SPresetValues::refractionStrength, &SOverridableConfig::refractionStrength);
+    glUniform1f(uniforms.refractionStrength,  std::isfinite(refractionStrengthValue) ? refractionStrengthValue : 0.0f);
+    glUniform1f(uniforms.noiseStrength,       resolvePresetFloat(resolveContext, &SPresetValues::noiseStrength, &SOverridableConfig::noiseStrength));
     glUniform1f(uniforms.chromaticAberration, resolvePresetFloat(resolveContext, &SPresetValues::chromaticAberration, &SOverridableConfig::chromaticAberration));
     glUniform1f(uniforms.fresnelStrength,     resolvePresetFloat(resolveContext, &SPresetValues::fresnelStrength, &SOverridableConfig::fresnelStrength));
     glUniform1f(uniforms.specularStrength,    resolvePresetFloat(resolveContext, &SPresetValues::specularStrength, &SOverridableConfig::specularStrength));
@@ -491,10 +630,41 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     glUniform1f(uniforms.bevelShadow,         resolvePresetFloat(resolveContext, &SPresetValues::bevelShadow, &SOverridableConfig::bevelShadow));
 
     // bevel width is defined in logical px; scale it to framebuffer px per monitor
-    const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock();
-    glUniform1f(uniforms.monitorScale, monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f);
+    glUniform1f(uniforms.monitorScale, monitorScale);
 
-    uploadThemeUniforms(resolveContext);
+    if (features & GLASS_FEATURE_LENS_EDGE) {
+        const float reflection =
+            resolvePresetFloat(resolveContext, &SPresetValues::fresnelReflection, &SOverridableConfig::fresnelReflection);
+        glUniform1f(uniforms.lensHeightPx, edgeHeightValue * monitorScale);
+        glUniform1f(uniforms.lensReflection, reflection > 0.0f ? std::min(reflection, 1.0f) : 0.0f);
+        glUniform1f(uniforms.lensReflectionReachPx, LENS_REFLECTION_REACH_PX);
+    }
+
+    if (features & GLASS_FEATURE_FOCUS_LIGHT) {
+        const int64_t focusLightColorValue =
+            resolvePresetInt(resolveContext, &SPresetValues::focusLightColor, &SOverridableConfig::focusLightColor);
+        glUniform1f(uniforms.focusLight, focusLightValue);
+        glUniform3f(uniforms.focusLightColor,
+            static_cast<float>((focusLightColorValue >> 24) & 0xFF) / 255.0f,
+            static_cast<float>((focusLightColorValue >> 16) & 0xFF) / 255.0f,
+            static_cast<float>((focusLightColorValue >> 8) & 0xFF) / 255.0f);
+        glUniform1f(uniforms.focusLightColorAlpha,
+            static_cast<float>(focusLightColorValue & 0xFF) / 255.0f);
+    }
+
+    if (features & GLASS_FEATURE_FROST) {
+        glUniform1i(uniforms.frostTex, FROST_TEXTURE_UNIT);
+        glUniform1f(uniforms.frostAmount, std::min(frost->amount, 1.0f));
+    }
+
+    if (contoured) {
+        glUniform1i(uniforms.contourTex, CONTOUR_TEXTURE_UNIT);
+        glUniform2f(uniforms.contourUVScale, static_cast<float>(mask->contourUVScale.x), static_cast<float>(mask->contourUVScale.y));
+        glUniform1f(uniforms.contourReferencePx, mask->contourReferencePx);
+        glUniform1f(uniforms.contourReachPx, mask->contourReachPx);
+    }
+
+    uploadThemeUniforms(resolveContext, program);
 
     const int64_t tintColorValue = resolvePresetInt(resolveContext, &SPresetValues::tintColor, &SOverridableConfig::tintColor);
     glUniform3f(uniforms.tintColor,
@@ -546,15 +716,15 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         // liquid touch: this window's simulation on units 2-4 (0 = sample, 1 = layer mask)
         const bool liquid = win && lf.liquidOn;
         glUniform1i(uniforms.liqOn, liquid ? 1 : 0);
-        glUniform1i(uniforms.liqDye, 2);
-        glUniform1i(uniforms.liqVel, 3);
-        glUniform1i(uniforms.liqDisp, 4);
+        glUniform1i(uniforms.liqDye, LIQUID_DYE_UNIT);
+        glUniform1i(uniforms.liqVel, LIQUID_VEL_UNIT);
+        glUniform1i(uniforms.liqDisp, LIQUID_DISP_UNIT);
         if (liquid) {
-            glActiveTexture(GL_TEXTURE2);
+            glActiveTexture(GL_TEXTURE0 + LIQUID_DYE_UNIT);
             glBindTexture(GL_TEXTURE_2D, lf.liquidDye);
-            glActiveTexture(GL_TEXTURE3);
+            glActiveTexture(GL_TEXTURE0 + LIQUID_VEL_UNIT);
             glBindTexture(GL_TEXTURE_2D, lf.liquidVel);
-            glActiveTexture(GL_TEXTURE4);
+            glActiveTexture(GL_TEXTURE0 + LIQUID_DISP_UNIT);
             glBindTexture(GL_TEXTURE_2D, lf.liquidDisp);
             glActiveTexture(GL_TEXTURE0);
             glUniform2f(uniforms.liqTexel, static_cast<float>(lf.liquidTexel.x), static_cast<float>(lf.liquidTexel.y));
@@ -579,6 +749,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
             static_cast<float>(mask->uvScale.x),
             static_cast<float>(mask->uvScale.y));
         glUniform1f(uniforms.maskAlphaThreshold, mask->alphaThreshold);
+        glUniform1f(uniforms.maskCoverage, mask->coverage);
         glUniform1i(uniforms.maskMode, mask->maskMode);
         glUniform1i(uniforms.regionRectCount, mask->regionRectCount);
         if (mask->regionRectCount > 0)
@@ -591,6 +762,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     } else {
         glUniform1i(uniforms.useMask, 0);
         glUniform1f(uniforms.maskAlphaThreshold, 0.001f);
+        glUniform1f(uniforms.maskCoverage, 0.0f);
         glUniform1i(uniforms.maskMode, 0);
         glUniform1i(uniforms.regionRectCount, 0);
         // Windows, and layers outside PROTOCOL_REGION, always sample the same
@@ -603,19 +775,6 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
 
     glUniform4f(uniforms.radii, radii[0], radii[1], radii[2], radii[3]);
     shader->setUniformFloat(SHADER_ROUNDING_POWER, safeRoundingPower);
-
-    // Subsurface items only: SDF sub-rect within the drawn box (see
-    // SMaskInfo::glassBoxSizePx). Sentinel (negative) falls back to the whole
-    // box — windows and alpha-mask layers always take this path, unchanged
-    // from before this uniform existed.
-    Vector2D glassBoxOffsetPx{0.0, 0.0};
-    Vector2D glassBoxSizePx = fullSize;
-    if (mask && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
-        glassBoxOffsetPx = mask->glassBoxOffsetPx;
-        glassBoxSizePx   = mask->glassBoxSizePx;
-    }
-    glUniform2f(uniforms.glassBoxOffsetPx, static_cast<float>(glassBoxOffsetPx.x), static_cast<float>(glassBoxOffsetPx.y));
-    glUniform2f(uniforms.glassBoxSizePx, static_cast<float>(glassBoxSizePx.x), static_cast<float>(glassBoxSizePx.y));
 
     glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
 

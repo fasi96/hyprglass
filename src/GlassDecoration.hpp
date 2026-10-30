@@ -1,10 +1,12 @@
 #pragma once
 
+#include "Frost.hpp"
 #include "GlassRenderer.hpp"
 #include "LiquidSim.hpp"
 #include "PluginConfig.hpp"
 
 #include <chrono>
+#include <optional>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
@@ -26,7 +28,7 @@ class CGlassDecoration : public IHyprWindowDecoration {
     [[nodiscard]] std::string                getDisplayName() override;
 
     [[nodiscard]] PHLWINDOW getOwner();
-    void                    renderPass(PHLMONITOR monitor, const float& alpha);
+    void                    renderPass(PHLMONITOR monitor, const float& alpha, bool xray);
     void                    onFullscreenStateChanged();
 
     // Content below committed damage in our sample region — resample next frame.
@@ -35,11 +37,19 @@ class CGlassDecoration : public IHyprWindowDecoration {
     // window's own surface tree.
     void markBackgroundDirty();
 
+    // Applies a mark markBackgroundDirty() owed under the rate limit once its
+    // deadline passed, or re-arms the shared timer for it.
+    void flushDeferredResample(std::chrono::steady_clock::time_point now);
+
+    // Hyprland's active window changed (window.active, every decoration): starts
+    // the focus light's fade and damages the glass if it is lit.
+    void onActiveWindowChanged(const PHLWINDOW& activeWindow);
+
     // Pure predicate: true when the cached sample must not be reused as-is
     // this frame. Called identically from CGlassPassElement::needsLiveBlur()
     // (draw()-time) and from renderPass() itself — safe to call twice, no GL
     // calls. transformBox is monitor-local physical pixels (see callers).
-    [[nodiscard]] bool wantsBackgroundResample(PHLMONITOR monitor, const CBox& transformBox) const;
+    [[nodiscard]] bool wantsBackgroundResample(PHLMONITOR monitor, const CBox& transformBox, bool xray) const;
 
     // Owner test without the shared_ptr copy getOwner() hands out.
     [[nodiscard]] bool  ownsWindow(const PHLWINDOW& window) const { return m_window == window; }
@@ -76,7 +86,12 @@ class CGlassDecoration : public IHyprWindowDecoration {
     // Window background cache state.
     bool m_hasCachedSample = false;
     bool m_backgroundDirty = false;
+    // The cached sample came from the x-ray snapshot: switching x-ray on or off
+    // must not reuse a sample of the other.
+    bool m_cachedFromSnapshot = false;
     std::chrono::steady_clock::time_point m_lastDirtyMark{};
+    // A mark the rate limit held back: the last change of a burst must still land.
+    std::optional<std::chrono::steady_clock::time_point> m_deferredResampleAt;
 
     // Scene generation at the last real sample, plus the monitor it was
     // captured against. SGlobalState::sceneGeneration is deliberately keyed
@@ -95,6 +110,10 @@ class CGlassDecoration : public IHyprWindowDecoration {
     // glass is invisible on static windows (#46).
     bool m_noBlurApplied = false;
 
+    // Glass can start without a config reload (tags, hyprctl keyword), and
+    // each start rechecks that Hyprland shadows are on.
+    bool m_glassWasEnabled = false;
+
     float m_lastSelfSample = 0.0f;
 
     // Liquid Touch: the simulation exists only while this window is stirred.
@@ -105,6 +124,30 @@ class CGlassDecoration : public IHyprWindowDecoration {
     Vector2D       m_liquidCursor;      // the pointer as the liquid sees it (sprung), global logical
     Vector2D       m_liquidCursorVel;   // its velocity, logical px/s
     void           updateLiquid(PHLMONITOR monitor, const CBox& transformBox, const SP<Render::IFramebuffer>& source);
+
+    // Focus light: whether this is the active window, and the fade the last
+    // change started (from its level then, at that time).
+    bool                                  m_focusLightTarget = false;
+    float                                 m_focusLightFrom   = 0.0f;
+    std::chrono::steady_clock::time_point m_focusLightChangedAt{};
+    // focus_light as of the last rendered frame, 0 when it, or the glass, is off.
+    float m_lastFocusLightStrength = 0.0f;
+    // What draw() folded into the render-order fingerprint this frame said the
+    // fade was still running: renderPass() keeps frames coming until draw()
+    // sees it settled, so the settled light bumps the scene once and glass
+    // stacked above resamples it.
+    bool m_focusLightFadingAtDraw = false;
+
+    [[nodiscard]] bool  focusLightFading(std::chrono::steady_clock::time_point now) const;
+    [[nodiscard]] float focusLightLevel(std::chrono::steady_clock::time_point now) const;
+    void                damageFocusLight();
+
+    // Frost: the eased amount and the frosted copy of the sample (see Frost.hpp).
+    Frost::CFrostState m_frost;
+    MONITORID          m_frostMonitor = -1; // the monitor the amount was last stepped for
+
+    // Damages the glass box only: frost changes how the cached sample is drawn, not the sample.
+    void damageFrost();
 
     // Frame serial the last glass element was queued for, and its index in that
     // frame. Hyprland renders a floating window over fullscreen more than once
@@ -119,7 +162,7 @@ class CGlassDecoration : public IHyprWindowDecoration {
     // many duplicate copies happened to render, not on the scene.
     uint64_t m_lastFoldedFrameSerial = 0;
 
-    void               queueGlassPass(float alpha);
+    void               queueGlassPass(float alpha, bool xray);
     [[nodiscard]] bool isCurrentGlassPass(uint64_t serial, uint32_t index) const {
         return serial == 0 || (serial == m_glassFrameSerial && index == m_glassQueueIndex);
     }
@@ -139,6 +182,7 @@ class CGlassDecoration : public IHyprWindowDecoration {
     };
 
     [[nodiscard]] EEnabledResolution resolveEnabled() const;
+    [[nodiscard]] bool               resolveXray() const;
     [[nodiscard]] bool               resolveThemeIsDark() const;
     [[nodiscard]] std::string        resolvePresetName() const;
 
